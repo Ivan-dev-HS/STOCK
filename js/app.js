@@ -5,7 +5,7 @@
   const todayISO = () => new Date().toISOString().slice(0, 10);
 
   const defaultState = () => ({
-    header: { sucursal: '', solicitante: '', fecha: todayISO(), observaciones: '' },
+    header: { solicitante: '', fecha: todayISO(), observaciones: '' },
     checked: {},  // { itemId: true }                 -> marcado "hay que pedir"
     qty: {},      // { itemId: number }                -> cantidad opcional (Guías/Rieles)
     qtyDiam: {},  // { itemId: { d20, d28 } }           -> cantidad opcional (Barras)
@@ -351,7 +351,7 @@
   // ---------- Cabecera del pedido ----------
 
   function initHeaderForm() {
-    const ids = { sucursal: 'f-sucursal', solicitante: 'f-solicitante', fecha: 'f-fecha', observaciones: 'f-observaciones' };
+    const ids = { solicitante: 'f-solicitante', fecha: 'f-fecha', observaciones: 'f-observaciones' };
     Object.entries(ids).forEach(([key, id]) => {
       const el = document.getElementById(id);
       el.value = state.header[key] || (key === 'fecha' ? todayISO() : '');
@@ -406,17 +406,18 @@
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.text('PEDIDO DE MATERIAL', marginX, y);
-    y += 22;
+    y += 26;
+
+    const h = state.header;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text(`Fecha: ${h.fecha || todayISO()}`, marginX, y);
+    y += 20;
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    const h = state.header;
-    const infoLines = [
-      `Sucursal / Local: ${h.sucursal || '-'}`,
-      `Solicitado por: ${h.solicitante || '-'}`,
-      `Fecha: ${h.fecha || todayISO()}`,
-    ];
-    infoLines.forEach((line) => { doc.text(line, marginX, y); y += 14; });
+    doc.text(`Solicitado por: ${h.solicitante || '-'}`, marginX, y);
+    y += 14;
     if (h.observaciones) {
       const wrapped = doc.splitTextToSize(`Observaciones: ${h.observaciones}`, 515);
       doc.text(wrapped, marginX, y);
@@ -482,9 +483,6 @@
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(`Total líneas: ${lines}   Total unidades aprox.: ${units}`, marginX, y);
-    y += 40;
-    doc.text('Firma / Recibido:', marginX, y);
-    doc.line(marginX + 90, y, marginX + 300, y);
 
     doc.save(`Pedido_Material_${h.fecha || todayISO()}.pdf`);
   }
@@ -504,15 +502,13 @@
 
     document.getElementById('print-area').innerHTML =
       `<h1>Pedido de Material</h1>` +
-      `<p><strong>Sucursal / Local:</strong> ${escapeHtml(h.sucursal || '-')} &nbsp;&nbsp;` +
-      `<strong>Solicitado por:</strong> ${escapeHtml(h.solicitante || '-')} &nbsp;&nbsp;` +
-      `<strong>Fecha:</strong> ${escapeHtml(h.fecha || todayISO())}</p>` +
+      `<p class="print-fecha"><strong>Fecha:</strong> ${escapeHtml(h.fecha || todayISO())}</p>` +
+      `<p><strong>Solicitado por:</strong> ${escapeHtml(h.solicitante || '-')}</p>` +
       (h.observaciones ? `<p><strong>Observaciones:</strong> ${escapeHtml(h.observaciones)}</p>` : '') +
       table('Sistemas de Guías y Rieles', ['Categoría', 'Producto', 'Color', 'Cantidad'], rieles) +
       table('Sistemas de Barras', ['Categoría', 'Producto', 'Color', 'D20', 'D28'], barras) +
       table('Productos adicionales', ['Categoría', 'Producto', 'Color', 'Cantidad'], otros) +
-      `<p class="print-total">Total líneas: ${lines} &nbsp;&nbsp; Total unidades aprox.: ${units}</p>` +
-      `<p class="print-firma">Firma / Recibido: __________________________</p>`;
+      `<p class="print-total">Total líneas: ${lines} &nbsp;&nbsp; Total unidades aprox.: ${units}</p>`;
   }
 
   function printOrder() {
@@ -528,7 +524,7 @@
   // ---------- Vaciar ----------
 
   function clearAll() {
-    if (!confirm('¿Vaciar todo lo marcado y los productos adicionales? Los datos de sucursal/solicitante se mantienen.')) return;
+    if (!confirm('¿Vaciar todo lo marcado y los productos adicionales? Los datos de solicitante se mantienen.')) return;
     state.checked = {};
     state.qty = {};
     state.qtyDiam = {};
