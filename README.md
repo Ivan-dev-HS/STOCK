@@ -8,21 +8,28 @@ reemplazo de la planilla en papel.
 
 1. Abre `index.html` en el navegador del teléfono o del computador (no
    requiere instalación ni conexión a internet una vez cargada la página).
-2. Completa **Sucursal / Local**, **Solicitado por** y, si quieres,
-   **Observaciones**.
-3. En las pestañas **Guías y Rieles** y **Barras** están todos los productos
-   del catálogo (igual que las planillas originales). Escribe la cantidad a
-   pedir en cada producto que haga falta. Para las barras hay dos campos,
-   **D20** y **D28**, según el diámetro.
-4. Usa el buscador para encontrar un producto rápido, o activa **"Ver solo
+2. Completa la **Fecha** y, si quieres, **Solicitado por** y
+   **Observaciones** en "Datos del pedido".
+3. En las pestañas **Guías** y **Barras** están todos los productos del
+   catálogo (igual que las planillas originales), agrupados en secciones
+   plegables por familia de producto. Marca cada producto que haga falta
+   pedir — es un checklist, no hay que indicar cantidades. Para las barras,
+   los diámetros D20 y D28 aparecen como productos separados.
+4. Usa el buscador para encontrar un producto rápido, o activa **"Solo
    marcados"** para revisar antes de enviar el pedido.
 5. Si necesitas pedir algo que no está en el catálogo, agrégalo en la
    pestaña **Otros**.
 6. Cuando termines, toca **Generar PDF** para descargar el pedido listo para
    enviar por correo/WhatsApp a la sección de pedidos, o **Imprimir** para
-   imprimirlo directamente.
-7. **Vaciar** borra las cantidades marcadas (los datos de sucursal y
-   solicitante se mantienen) para empezar un pedido nuevo.
+   imprimirlo directamente. El PDF sale organizado por secciones, igual que
+   en la app, para que se entienda de un vistazo a qué familia pertenece
+   cada accesorio marcado.
+7. Al generar el PDF o imprimir, el pedido queda guardado en la pestaña
+   **Historial** y las marcas se vacían automáticamente para el próximo
+   pedido. Desde el Historial se puede volver a descargar o reimprimir
+   cualquier pedido anterior, eliminarlo, o vaciar todo el historial.
+8. **Vaciar** borra lo marcado sin generar nada (los datos de solicitante se
+   mantienen) por si necesitas empezar de cero.
 
 Los datos se guardan automáticamente en el propio teléfono/navegador
 (`localStorage`), así que puedes cerrar la app y seguir completando el
@@ -40,9 +47,10 @@ opcionalmente, se agrega a la pantalla de inicio como acceso directo.
 - `index.html` — estructura de la página.
 - `css/styles.css` — estilos, pensados primero para móvil.
 - `js/catalog-data.js` — catálogo de productos (reconstruido de las
-  planillas `Inventario_Sistemas` e `Inventario_Sistemas_Barras`).
+  planillas `Inventario_Sistemas` e `Inventario_Sistemas_Barras`), agrupado
+  en secciones.
 - `js/app.js` — lógica de la app: listas, guardado local, búsqueda,
-  generación de PDF y vista de impresión.
+  historial de pedidos, generación de PDF y vista de impresión.
 - `js/vendor/` — librería [jsPDF](https://github.com/parallax/jsPDF) (y su
   plugin `autotable`) incluida localmente para que la generación de PDF
   funcione sin depender de un servicio externo.

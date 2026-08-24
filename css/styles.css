@@ -306,6 +306,7 @@ main { padding: 10px 12px 16px; }
 .chk:focus-visible + .check-box { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .item-info {
+  flex: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -323,20 +324,7 @@ main { padding: 10px 12px 16px; }
 .item-row.is-checked .item-color { background: rgba(255,255,255,0.6); }
 .item-nota { font-size: 0.7rem; color: var(--muted); font-style: italic; }
 
-.item-qty { display: none; gap: 6px; flex-shrink: 0; }
-.item-row.is-checked .item-qty { display: flex; }
-.qty-field input {
-  width: 54px;
-  text-align: center;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 4px;
-  font-size: 0.86rem;
-  background: #fff;
-  cursor: text;
-}
-.qty-field input:focus { outline: 2px solid var(--primary); border-color: var(--primary); }
-.qty-fixed { font-weight: 700; min-width: 26px; text-align: center; font-size: 0.9rem; }
+.otro-row .btn-icon { flex-shrink: 0; }
 
 /* ---------- Otros (personalizado) ---------- */
 
@@ -357,6 +345,7 @@ main { padding: 10px 12px 16px; }
   font-size: 0.9rem;
   background: var(--surface-alt);
 }
+.otro-color-field { grid-column: 1 / -1; }
 .otro-form input:focus { outline: 2px solid var(--primary); background: #fff; }
 .otro-form button {
   grid-column: 1 / -1;
@@ -417,6 +406,15 @@ main { padding: 10px 12px 16px; }
   white-space: nowrap;
 }
 .history-table-wrap th { color: var(--muted); font-weight: 700; }
+
+.group-row td {
+  font-weight: 700;
+  background: var(--surface-alt);
+  color: var(--primary);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
 
 .history-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .history-actions .btn { flex: 1; padding: 9px 10px; font-size: 0.8rem; }
@@ -511,6 +509,10 @@ main { padding: 10px 12px 16px; }
     text-align: left;
   }
   .print-area th { background: #e7ecf1; }
+  .print-area th, .print-area .group-row td {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
   .print-fecha { font-size: 1.15rem; font-weight: 700; }
   .print-total { font-weight: 700; margin-top: 10px; }
 }

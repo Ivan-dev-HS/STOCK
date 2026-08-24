@@ -1,17 +1,15 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'inventarioPedidoV3';
-  const HISTORY_KEY = 'inventarioHistorialV1';
+  const STORAGE_KEY = 'inventarioPedidoV4';
+  const HISTORY_KEY = 'inventarioHistorialV2';
   const HISTORY_MAX = 50;
   const todayISO = () => new Date().toISOString().slice(0, 10);
 
   const defaultState = () => ({
     header: { solicitante: '', fecha: todayISO(), observaciones: '' },
-    checked: {},  // { itemId: true }    -> marcado "hay que pedir"
-    qty: {},      // { itemId: number }   -> cantidad opcional (Guías/Rieles)
-    qtyDiam: {},  // { itemId: { d20, d28 } } -> cantidad opcional (Barras)
-    otros: [],    // [{ id, cat, prod, color, cantidad }]
+    checked: {}, // { itemId: true } -> marcado "hay que pedir"
+    otros: [],   // [{ id, cat, prod, color }]
   });
 
   let state = loadState();
@@ -30,8 +28,6 @@
       return {
         header: { ...base.header, ...(parsed.header || {}) },
         checked: parsed.checked || {},
-        qty: parsed.qty || {},
-        qtyDiam: parsed.qtyDiam || {},
         otros: Array.isArray(parsed.otros) ? parsed.otros : [],
       };
     } catch (e) {
@@ -40,17 +36,19 @@
   }
 
   // Compatibilidad con versiones anteriores: los ids de producto cambiaron
-  // de formato (ya no dependen de la posición en el catálogo), así que las
-  // marcas/cantidades viejas no se pueden migrar, pero sí los datos del
-  // pedido (fecha, solicitante, observaciones) y los productos "Otros".
+  // de formato y ya no hay cantidades, así que las marcas viejas no se
+  // pueden migrar, pero sí los datos del pedido (fecha, solicitante,
+  // observaciones) y los nombres de los productos "Otros" ya agregados.
   function migrateOldState() {
     const base = defaultState();
     try {
-      const raw = localStorage.getItem('inventarioPedidoV2') || localStorage.getItem('inventarioPedidoV1');
+      const raw = localStorage.getItem('inventarioPedidoV3')
+        || localStorage.getItem('inventarioPedidoV2')
+        || localStorage.getItem('inventarioPedidoV1');
       if (!raw) return base;
       const old = JSON.parse(raw);
       base.header = { ...base.header, ...(old.header || {}) };
-      base.otros = Array.isArray(old.otros) ? old.otros : [];
+      base.otros = (Array.isArray(old.otros) ? old.otros : []).map((o) => ({ id: o.id, cat: o.cat, prod: o.prod, color: o.color }));
     } catch (e) { /* ignora */ }
     return base;
   }
@@ -139,29 +137,6 @@
       (item.color ? `<span class="item-color">${escapeHtml(item.color)}</span>` : '') +
       (item.nota ? `<span class="item-nota">${escapeHtml(item.nota)}</span>` : '');
 
-    const qtyBox = document.createElement('div');
-    qtyBox.className = 'item-qty';
-    if (item.diam) {
-      qtyBox.appendChild(qtyInput('D20', state.qtyDiam[item.id]?.d20, (v) => {
-        state.qtyDiam[item.id] = state.qtyDiam[item.id] || {};
-        state.qtyDiam[item.id].d20 = v;
-        saveState();
-        updateSummary();
-      }));
-      qtyBox.appendChild(qtyInput('D28', state.qtyDiam[item.id]?.d28, (v) => {
-        state.qtyDiam[item.id] = state.qtyDiam[item.id] || {};
-        state.qtyDiam[item.id].d28 = v;
-        saveState();
-        updateSummary();
-      }));
-    } else {
-      qtyBox.appendChild(qtyInput('Cant.', state.qty[item.id], (v) => {
-        state.qty[item.id] = v;
-        saveState();
-        updateSummary();
-      }));
-    }
-
     chk.addEventListener('change', () => {
       state.checked[item.id] = chk.checked || undefined;
       if (!chk.checked) delete state.checked[item.id];
@@ -174,27 +149,7 @@
     label.appendChild(chk);
     label.appendChild(box);
     label.appendChild(info);
-    label.appendChild(qtyBox);
     return label;
-  }
-
-  function qtyInput(placeholder, value, onChange) {
-    const wrap = document.createElement('span');
-    wrap.className = 'qty-field';
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.inputMode = 'numeric';
-    input.min = '0';
-    input.placeholder = placeholder;
-    input.value = value ? String(value) : '';
-    input.addEventListener('click', (e) => e.stopPropagation());
-    input.addEventListener('mousedown', (e) => e.stopPropagation());
-    input.addEventListener('input', () => {
-      const n = parseInt(input.value, 10);
-      onChange(Number.isFinite(n) && n > 0 ? n : undefined);
-    });
-    wrap.appendChild(input);
-    return wrap;
   }
 
   function sectionCounts(section) {
@@ -265,8 +220,7 @@
         (o.color ? `<span class="item-color">${escapeHtml(o.color)}</span>` : '') +
         (o.cat ? `<span class="item-nota">${escapeHtml(o.cat)}</span>` : '') +
         `</div>` +
-        `<div class="item-qty"><span class="qty-fixed">${o.cantidad}</span>` +
-        `<button type="button" class="btn-icon btn-remove" aria-label="Eliminar">✕</button></div>`;
+        `<button type="button" class="btn-icon btn-remove" aria-label="Eliminar">✕</button>`;
       row.querySelector('.btn-remove').addEventListener('click', () => {
         state.otros = state.otros.filter((x) => x.id !== o.id);
         saveState();
@@ -284,13 +238,11 @@
       const cat = document.getElementById('otro-cat').value.trim();
       const prod = document.getElementById('otro-prod').value.trim();
       const color = document.getElementById('otro-color').value.trim();
-      const cantidadRaw = document.getElementById('otro-cant').value.trim();
-      const cantidad = cantidadRaw ? parseInt(cantidadRaw, 10) : 1;
       if (!prod) {
         alert('Indica al menos el nombre del producto.');
         return;
       }
-      state.otros.push({ id: 'o' + Date.now(), cat, prod, color, cantidad: Number.isFinite(cantidad) && cantidad > 0 ? cantidad : 1 });
+      state.otros.push({ id: 'o' + Date.now(), cat, prod, color });
       saveState();
       form.reset();
       renderOtros();
@@ -302,20 +254,10 @@
 
   function countMarked() {
     let lines = 0;
-    let units = 0;
-    CATALOG_RIELES.forEach((it) => {
-      if (!state.checked[it.id]) return;
-      lines++;
-      units += state.qty[it.id] || 1;
-    });
-    CATALOG_BARRAS.forEach((it) => {
-      if (!state.checked[it.id]) return;
-      lines++;
-      const d = state.qtyDiam[it.id] || {};
-      units += (d.d20 || 0) + (d.d28 || 0) || 1;
-    });
-    state.otros.forEach((o) => { lines++; units += o.cantidad; });
-    return { lines, units };
+    CATALOG_RIELES.forEach((it) => { if (state.checked[it.id]) lines++; });
+    CATALOG_BARRAS.forEach((it) => { if (state.checked[it.id]) lines++; });
+    lines += state.otros.length;
+    return { lines };
   }
 
   function catalogProgress(tabKey) {
@@ -327,9 +269,8 @@
   }
 
   function updateSummary() {
-    const { lines, units } = countMarked();
+    const { lines } = countMarked();
     document.getElementById('summary-lines').textContent = lines;
-    document.getElementById('summary-units').textContent = units;
     document.getElementById('badge-otros').textContent = state.otros.length;
     document.getElementById('badge-otros').style.display = state.otros.length ? 'inline-flex' : 'none';
     document.getElementById('badge-historial').textContent = history.length;
@@ -418,31 +359,38 @@
     document.getElementById('f-observaciones').value = state.header.observaciones;
   }
 
-  // ---------- Construcción de los datos del pedido ----------
+  // ---------- Construcción de los datos del pedido (agrupado por sección) ----------
+
+  function groupByGrupo(catalog) {
+    const groups = [];
+    const byTitle = new Map();
+    catalog.forEach((it) => {
+      if (!state.checked[it.id]) return;
+      let g = byTitle.get(it.grupo);
+      if (!g) {
+        g = { title: it.grupo, rows: [] };
+        byTitle.set(it.grupo, g);
+        groups.push(g);
+      }
+      g.rows.push([it.prod, it.color || '']);
+    });
+    return groups;
+  }
 
   function buildOrderData() {
-    const rieles = CATALOG_RIELES
-      .filter((it) => state.checked[it.id])
-      .map((it) => [it.cat.replace(/^-/, ''), it.prod, it.color || '', state.qty[it.id] ? String(state.qty[it.id]) : 'Sí']);
+    const rielesGroups = groupByGrupo(CATALOG_RIELES);
+    const barrasGroups = groupByGrupo(CATALOG_BARRAS);
+    const otros = state.otros.map((o) => [o.cat || '', o.prod, o.color || '']);
+    return { rielesGroups, barrasGroups, otros };
+  }
 
-    const barras = CATALOG_BARRAS
-      .filter((it) => state.checked[it.id])
-      .map((it) => {
-        const d = state.qtyDiam[it.id] || {};
-        const d20 = d.d20 ? String(d.d20) : '';
-        const d28 = d.d28 ? String(d.d28) : '';
-        return [it.cat.replace(/^-/, ''), it.prod, it.color || '', d20 || (d28 ? '' : 'Sí'), d28];
-      });
-
-    const otros = state.otros.map((o) => [o.cat || '', o.prod, o.color || '', String(o.cantidad)]);
-
-    return { rieles, barras, otros };
+  function hasOrderData(data) {
+    return data.rielesGroups.length > 0 || data.barrasGroups.length > 0 || data.otros.length > 0;
   }
 
   // ---------- Generación de PDF ----------
 
   function renderPdfDoc(header, data, totals) {
-    const { rieles, barras, otros } = data;
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     const marginX = 40;
@@ -469,42 +417,37 @@
     }
     y += 8;
 
-    if (rieles.length) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.text('Sistemas de Guías y Rieles', marginX, y);
-      doc.autoTable({
-        startY: y + 6,
-        margin: { left: marginX, right: marginX },
-        head: [['Categoría', 'Producto', 'Color', 'Cantidad']],
-        body: rieles,
-        theme: 'grid',
-        styles: { fontSize: 9, cellPadding: 4 },
-        headStyles: { fillColor: [37, 61, 90] },
-        columnStyles: { 3: { halign: 'center', cellWidth: 60 } },
+    function groupedBody(groups) {
+      const rows = [];
+      groups.forEach((g) => {
+        rows.push([{ content: g.title, colSpan: 2, styles: { fontStyle: 'bold', fillColor: [225, 232, 242], textColor: [27, 47, 75] } }]);
+        g.rows.forEach((r) => rows.push(r));
       });
-      y = doc.lastAutoTable.finalY + 26;
+      return rows;
     }
 
-    if (barras.length) {
+    function printSection(title, groups) {
+      if (!groups.length) return;
       if (y > 700) { doc.addPage(); y = 50; }
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
-      doc.text('Sistemas de Barras', marginX, y);
+      doc.text(title, marginX, y);
       doc.autoTable({
         startY: y + 6,
         margin: { left: marginX, right: marginX },
-        head: [['Categoría', 'Producto', 'Color', 'D20', 'D28']],
-        body: barras,
+        head: [['Producto', 'Color']],
+        body: groupedBody(groups),
         theme: 'grid',
         styles: { fontSize: 9, cellPadding: 4 },
         headStyles: { fillColor: [37, 61, 90] },
-        columnStyles: { 3: { halign: 'center', cellWidth: 45 }, 4: { halign: 'center', cellWidth: 45 } },
       });
       y = doc.lastAutoTable.finalY + 26;
     }
 
-    if (otros.length) {
+    printSection('Sistemas de Guías y Rieles', data.rielesGroups);
+    printSection('Sistemas de Barras', data.barrasGroups);
+
+    if (data.otros.length) {
       if (y > 700) { doc.addPage(); y = 50; }
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
@@ -512,12 +455,11 @@
       doc.autoTable({
         startY: y + 6,
         margin: { left: marginX, right: marginX },
-        head: [['Categoría', 'Producto', 'Color', 'Cantidad']],
-        body: otros,
+        head: [['Categoría', 'Producto', 'Color']],
+        body: data.otros,
         theme: 'grid',
         styles: { fontSize: 9, cellPadding: 4 },
         headStyles: { fillColor: [37, 61, 90] },
-        columnStyles: { 3: { halign: 'center', cellWidth: 60 } },
       });
       y = doc.lastAutoTable.finalY + 26;
     }
@@ -525,14 +467,14 @@
     if (y > 740) { doc.addPage(); y = 50; }
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Total líneas: ${totals.lines}   Total unidades aprox.: ${totals.units}`, marginX, y);
+    doc.text(`Total de productos marcados: ${totals.lines}`, marginX, y);
 
     return doc;
   }
 
   function generatePDF() {
     const data = buildOrderData();
-    if (!data.rieles.length && !data.barras.length && !data.otros.length) {
+    if (!hasOrderData(data)) {
       alert('No hay productos marcados. Marca al menos un producto antes de generar el pedido.');
       return;
     }
@@ -546,26 +488,35 @@
 
   // ---------- Vista de impresión ----------
 
+  function groupsToHtml(groups) {
+    if (!groups.length) return '';
+    let rows = '';
+    groups.forEach((g) => {
+      rows += `<tr class="group-row"><td colspan="2">${escapeHtml(g.title)}</td></tr>`;
+      g.rows.forEach((r) => { rows += `<tr><td>${escapeHtml(r[0])}</td><td>${escapeHtml(r[1])}</td></tr>`; });
+    });
+    return `<table><thead><tr><th>Producto</th><th>Color</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
   function buildPrintHtml(header, data, totals) {
-    const { rieles, barras, otros } = data;
-    const table = (title, headers, rows) => {
-      if (!rows.length) return '';
-      return `<h2>${title}</h2><table><thead><tr>${headers.map((x) => `<th>${x}</th>`).join('')}</tr></thead>` +
-        `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    const otrosTable = () => {
+      if (!data.otros.length) return '';
+      return `<h2>Productos adicionales</h2><table><thead><tr><th>Categoría</th><th>Producto</th><th>Color</th></tr></thead>` +
+        `<tbody>${data.otros.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     };
     return `<h1>Pedido de Material</h1>` +
       `<p class="print-fecha"><strong>Fecha:</strong> ${escapeHtml(header.fecha || todayISO())}</p>` +
       `<p><strong>Solicitado por:</strong> ${escapeHtml(header.solicitante || '-')}</p>` +
       (header.observaciones ? `<p><strong>Observaciones:</strong> ${escapeHtml(header.observaciones)}</p>` : '') +
-      table('Sistemas de Guías y Rieles', ['Categoría', 'Producto', 'Color', 'Cantidad'], rieles) +
-      table('Sistemas de Barras', ['Categoría', 'Producto', 'Color', 'D20', 'D28'], barras) +
-      table('Productos adicionales', ['Categoría', 'Producto', 'Color', 'Cantidad'], otros) +
-      `<p class="print-total">Total líneas: ${totals.lines} &nbsp;&nbsp; Total unidades aprox.: ${totals.units}</p>`;
+      (data.rielesGroups.length ? `<h2>Sistemas de Guías y Rieles</h2>${groupsToHtml(data.rielesGroups)}` : '') +
+      (data.barrasGroups.length ? `<h2>Sistemas de Barras</h2>${groupsToHtml(data.barrasGroups)}` : '') +
+      otrosTable() +
+      `<p class="print-total">Total de productos marcados: ${totals.lines}</p>`;
   }
 
   function printOrder() {
     const data = buildOrderData();
-    if (!data.rieles.length && !data.barras.length && !data.otros.length) {
+    if (!hasOrderData(data)) {
       alert('No hay productos marcados. Marca al menos un producto antes de imprimir.');
       return;
     }
@@ -617,7 +568,7 @@
         `<span class="chevron">›</span>` +
         `<span class="history-info">` +
         `<span class="history-date">${escapeHtml(formatFechaLarga(entry.header.fecha))}</span>` +
-        `<span class="history-meta">${escapeHtml(entry.header.solicitante || 'Sin nombre')} · ${entry.totals.lines} líneas · ${entry.totals.units} uds.</span>` +
+        `<span class="history-meta">${escapeHtml(entry.header.solicitante || 'Sin nombre')} · ${entry.totals.lines} productos</span>` +
         `</span>`;
       header.addEventListener('click', () => {
         const nowOpen = wrap.classList.toggle('open');
@@ -627,16 +578,16 @@
       const body = document.createElement('div');
       body.className = 'cat-body history-body';
 
-      const table = (title, headers, rows) => {
-        if (!rows.length) return '';
-        return `<h3>${escapeHtml(title)}</h3><div class="history-table-wrap"><table><thead><tr>${headers.map((x) => `<th>${x}</th>`).join('')}</tr></thead>` +
-          `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      const otrosTable = () => {
+        if (!entry.data.otros.length) return '';
+        return `<h3>Otros</h3><div class="history-table-wrap"><table><thead><tr><th>Categoría</th><th>Producto</th><th>Color</th></tr></thead>` +
+          `<tbody>${entry.data.otros.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
       };
       body.innerHTML =
         (entry.header.observaciones ? `<p class="history-obs"><strong>Observaciones:</strong> ${escapeHtml(entry.header.observaciones)}</p>` : '') +
-        table('Guías y Rieles', ['Categoría', 'Producto', 'Color', 'Cant.'], entry.data.rieles) +
-        table('Barras', ['Categoría', 'Producto', 'Color', 'D20', 'D28'], entry.data.barras) +
-        table('Otros', ['Categoría', 'Producto', 'Color', 'Cant.'], entry.data.otros);
+        (entry.data.rielesGroups.length ? `<h3>Guías y Rieles</h3><div class="history-table-wrap">${groupsToHtml(entry.data.rielesGroups)}</div>` : '') +
+        (entry.data.barrasGroups.length ? `<h3>Barras</h3><div class="history-table-wrap">${groupsToHtml(entry.data.barrasGroups)}</div>` : '') +
+        otrosTable();
 
       const actions = document.createElement('div');
       actions.className = 'history-actions';
@@ -680,8 +631,6 @@
 
   function performClear() {
     state.checked = {};
-    state.qty = {};
-    state.qtyDiam = {};
     state.otros = [];
     state.header.observaciones = '';
     state.header.fecha = todayISO();

@@ -1,7 +1,6 @@
 /* Catálogo base de productos, reconstruido a partir de las planillas
    "Inventario_Sistemas.pdf" e "Inventario_Sistemas_Barras.pdf".
-   Cada item: { grupo, cat, prod, color, nota } (+ diam:true para items
-   con cantidad separada por diámetro D20 / D28). */
+   Cada item: { grupo, cat, prod, color, nota }. */
 
 function barraGuia(color, conEmpalme) {
   const items = [
@@ -17,16 +16,25 @@ function barraGuia(color, conEmpalme) {
 
 function barraDeForja(color) {
   const grupo = 'Barra de forja';
-  return [
-    { grupo, cat: '-Barra de forja', prod: 'Barra de 150', color, diam: true },
-    { grupo, cat: '-Barra de forja', prod: 'Barra de 200', color, diam: true },
-    { grupo, cat: '-Barra de forja', prod: 'Barra de 250', color, diam: true },
-    { grupo, cat: '-Accesorio', prod: 'Sop. Techo', color, diam: true },
-    { grupo, cat: '-Accesorio', prod: 'Sop. Frente', color, diam: true },
-    { grupo, cat: '-Accesorio', prod: 'Sop. Frente doble', color, diam: true },
-    { grupo, cat: '-Accesorio', prod: 'Final Tapón', color, diam: true },
-    { grupo, cat: '-Accesorio', prod: 'Final Bola', color, diam: true },
+  // D20 y D28 son dos diámetros distintos: se listan como productos
+  // independientes (igual que Rielchyc/Normal) para poder pedir uno,
+  // otro o ambos, y para que quede claro de cuál se trata a simple vista.
+  const base = [
+    { cat: '-Barra de forja', prod: 'Barra de 150' },
+    { cat: '-Barra de forja', prod: 'Barra de 200' },
+    { cat: '-Barra de forja', prod: 'Barra de 250' },
+    { cat: '-Accesorio', prod: 'Sop. Techo' },
+    { cat: '-Accesorio', prod: 'Sop. Frente' },
+    { cat: '-Accesorio', prod: 'Sop. Frente doble' },
+    { cat: '-Accesorio', prod: 'Final Tapón' },
+    { cat: '-Accesorio', prod: 'Final Bola' },
   ];
+  const items = [];
+  base.forEach(({ cat, prod }) => {
+    items.push({ grupo, cat, prod, color: `${color} (D20)` });
+    items.push({ grupo, cat, prod, color: `${color} (D28)` });
+  });
+  return items;
 }
 
 const CATALOG_RIELES = [
