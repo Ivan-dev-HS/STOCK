@@ -180,20 +180,6 @@ function assignIds(list, prefix) {
 assignIds(CATALOG_RIELES, 'r');
 assignIds(CATALOG_BARRAS, 'b');
 
-// Agrupa los items consecutivos que comparten "grupo" en secciones,
-// preservando el orden del catálogo original.
-function buildSections(list) {
-  const sections = [];
-  let current = null;
-  list.forEach((item) => {
-    if (!current || current.title !== item.grupo) {
-      current = { title: item.grupo, items: [] };
-      sections.push(current);
-    }
-    current.items.push(item);
-  });
-  return sections;
-}
-
-const SECTIONS_RIELES = buildSections(CATALOG_RIELES);
-const SECTIONS_BARRAS = buildSections(CATALOG_BARRAS);
+// Las secciones (agrupadas por "grupo") se arman en app.js, ya que ahí se
+// combina este catálogo base con los productos que el usuario agregue,
+// edite o elimine manualmente desde la pestaña "Catálogo".

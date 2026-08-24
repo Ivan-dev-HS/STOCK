@@ -3,6 +3,7 @@
 
   const STORAGE_KEY = 'inventarioPedidoV4';
   const HISTORY_KEY = 'inventarioHistorialV2';
+  const CATALOG_EDITS_KEY = 'inventarioCatalogoEditsV1';
   const HISTORY_MAX = 50;
   const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -14,10 +15,14 @@
 
   let state = loadState();
   let history = loadHistory();
+  let catalogEdits = loadCatalogEdits();
   let onlyMarked = false;
   let activeTab = 'rieles';
+  let catalogoView = 'rieles';
   const openSections = { rieles: new Set(), barras: new Set() };
+  const openCatalogoSections = { rieles: new Set(), barras: new Set() };
   const openHistory = new Set();
+  const EFFECTIVE = { rieles: [], barras: [], sectionsRieles: [], sectionsBarras: [] };
 
   function loadState() {
     try {
@@ -72,6 +77,90 @@
   function saveHistory() {
     if (history.length > HISTORY_MAX) history.length = HISTORY_MAX;
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  }
+
+  // ---------- Edición manual del catálogo ----------
+  //
+  // El catálogo base (js/catalog-data.js) queda tal cual viene de las
+  // planillas originales. Los cambios que el usuario hace desde la pestaña
+  // "Catálogo" (agregar, editar, eliminar) se guardan aparte, como una capa
+  // encima del catálogo base, para poder "Restaurar" en cualquier momento
+  // sin perder la referencia original.
+
+  function defaultCatalogEdits() {
+    return {
+      edits: {},   // { itemId: { grupo, prod, color } } -> reemplaza esos campos en un item base
+      deleted: {}, // { itemId: true } -> oculta un item base
+      custom: [],  // [{ id, catalogo:'rieles'|'barras', grupo, cat, prod, color }] -> items nuevos
+    };
+  }
+
+  function loadCatalogEdits() {
+    try {
+      const raw = localStorage.getItem(CATALOG_EDITS_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      const base = defaultCatalogEdits();
+      if (!parsed) return base;
+      return {
+        edits: parsed.edits || {},
+        deleted: parsed.deleted || {},
+        custom: Array.isArray(parsed.custom) ? parsed.custom : [],
+      };
+    } catch (e) {
+      return defaultCatalogEdits();
+    }
+  }
+
+  function saveCatalogEdits() {
+    localStorage.setItem(CATALOG_EDITS_KEY, JSON.stringify(catalogEdits));
+  }
+
+  function buildEffectiveList(catalogo) {
+    const base = catalogo === 'rieles' ? CATALOG_RIELES : CATALOG_BARRAS;
+    const out = [];
+    base.forEach((it) => {
+      if (catalogEdits.deleted[it.id]) return;
+      const patch = catalogEdits.edits[it.id];
+      out.push(patch ? { ...it, ...patch } : it);
+    });
+    catalogEdits.custom
+      .filter((c) => c.catalogo === catalogo && !catalogEdits.deleted[c.id])
+      .forEach((c) => out.push({ id: c.id, grupo: c.grupo, cat: c.cat || '-Accesorio', prod: c.prod, color: c.color || '', custom: true }));
+    return out;
+  }
+
+  // Agrupa por "grupo" (sin exigir que estén contiguos en el arreglo), para
+  // que un producto agregado a un grupo ya existente se una a esa misma
+  // sección en vez de crear una sección duplicada al final.
+  function buildSectionsFrom(list) {
+    const sections = [];
+    const byTitle = new Map();
+    list.forEach((item) => {
+      let sec = byTitle.get(item.grupo);
+      if (!sec) {
+        sec = { title: item.grupo, items: [] };
+        byTitle.set(item.grupo, sec);
+        sections.push(sec);
+      }
+      sec.items.push(item);
+    });
+    return sections;
+  }
+
+  function rebuildEffectiveCatalog() {
+    EFFECTIVE.rieles = buildEffectiveList('rieles');
+    EFFECTIVE.barras = buildEffectiveList('barras');
+    EFFECTIVE.sectionsRieles = buildSectionsFrom(EFFECTIVE.rieles);
+    EFFECTIVE.sectionsBarras = buildSectionsFrom(EFFECTIVE.barras);
+  }
+
+  function refreshEverything() {
+    rebuildEffectiveCatalog();
+    renderSections(EFFECTIVE.sectionsRieles, 'panel-rieles-list', 'rieles');
+    renderSections(EFFECTIVE.sectionsBarras, 'panel-barras-list', 'barras');
+    renderCatalogo();
+    updateSummary();
+    applyFilters();
   }
 
   const ACCENTS = { á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u', ñ: 'n', ü: 'u' };
@@ -158,13 +247,13 @@
     return { total, done };
   }
 
-  function buildSectionEl(section, sectionIndex, tabKey) {
+  function buildSectionEl(section, tabKey) {
     const wrap = document.createElement('section');
     wrap.className = 'cat-section';
-    wrap.dataset.index = String(sectionIndex);
+    wrap.dataset.title = section.title;
 
     const { total, done } = sectionCounts(section);
-    const isOpen = openSections[tabKey].has(sectionIndex);
+    const isOpen = openSections[tabKey].has(section.title);
     if (isOpen) wrap.classList.add('open');
 
     const header = document.createElement('button');
@@ -176,8 +265,8 @@
       `<span class="cat-count${done ? ' has-marked' : ''}">${done}/${total}</span>`;
     header.addEventListener('click', () => {
       const nowOpen = wrap.classList.toggle('open');
-      if (nowOpen) openSections[tabKey].add(sectionIndex);
-      else openSections[tabKey].delete(sectionIndex);
+      if (nowOpen) openSections[tabKey].add(section.title);
+      else openSections[tabKey].delete(section.title);
     });
 
     const body = document.createElement('div');
@@ -193,10 +282,10 @@
     const container = document.getElementById(containerId);
     container.innerHTML = '';
     const frag = document.createDocumentFragment();
-    sections.forEach((section, i) => {
+    sections.forEach((section) => {
       const { done } = sectionCounts(section);
-      if (done > 0) openSections[tabKey].add(i);
-      frag.appendChild(buildSectionEl(section, i, tabKey));
+      if (done > 0) openSections[tabKey].add(section.title);
+      frag.appendChild(buildSectionEl(section, tabKey));
     });
     container.appendChild(frag);
   }
@@ -250,18 +339,223 @@
     });
   }
 
+  // ---------- Catálogo (agregar / editar / eliminar productos) ----------
+
+  function newCustomId() {
+    return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  function inputEl(value, placeholder) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = value || '';
+    input.placeholder = placeholder;
+    input.className = 'catalogo-edit-input';
+    return input;
+  }
+
+  function buildCatalogoRow(item) {
+    const row = document.createElement('div');
+    row.className = 'item-row catalogo-row';
+    row.dataset.id = item.id;
+    renderCatalogoRowView(row, item);
+    return row;
+  }
+
+  function renderCatalogoRowView(row, item) {
+    row.innerHTML = '';
+    row.classList.remove('is-editing');
+
+    const info = document.createElement('div');
+    info.className = 'item-info';
+    info.innerHTML =
+      `<span class="item-name">${escapeHtml(item.prod)}</span>` +
+      (item.color ? `<span class="item-color">${escapeHtml(item.color)}</span>` : '');
+
+    const actions = document.createElement('div');
+    actions.className = 'catalogo-row-actions';
+    actions.innerHTML =
+      `<button type="button" class="btn-icon btn-edit" aria-label="Editar">✎</button>` +
+      `<button type="button" class="btn-icon btn-remove" aria-label="Eliminar">✕</button>`;
+    actions.querySelector('.btn-edit').addEventListener('click', () => renderCatalogoRowEdit(row, item));
+    actions.querySelector('.btn-remove').addEventListener('click', () => {
+      const label = item.color ? `${item.prod} (${item.color})` : item.prod;
+      if (!confirm(`¿Eliminar "${label}" del catálogo? Esta acción no se puede deshacer.`)) return;
+      deleteCatalogItem(item);
+    });
+
+    row.appendChild(info);
+    row.appendChild(actions);
+  }
+
+  function renderCatalogoRowEdit(row, item) {
+    row.innerHTML = '';
+    row.classList.add('is-editing');
+
+    const grupoInput = inputEl(item.grupo, 'Grupo / sección');
+    const prodInput = inputEl(item.prod, 'Producto');
+    const colorInput = inputEl(item.color, 'Color (opcional)');
+    const fields = document.createElement('div');
+    fields.className = 'catalogo-edit-fields';
+    fields.append(grupoInput, prodInput, colorInput);
+
+    const actions = document.createElement('div');
+    actions.className = 'catalogo-row-actions';
+    actions.innerHTML =
+      `<button type="button" class="btn-icon btn-save" aria-label="Guardar">✓</button>` +
+      `<button type="button" class="btn-icon btn-cancel" aria-label="Cancelar">✕</button>`;
+    actions.querySelector('.btn-save').addEventListener('click', () => {
+      const grupo = grupoInput.value.trim();
+      const prod = prodInput.value.trim();
+      const color = colorInput.value.trim();
+      if (!grupo || !prod) {
+        alert('El grupo y el producto son obligatorios.');
+        return;
+      }
+      saveCatalogEdit(item, { grupo, prod, color });
+    });
+    actions.querySelector('.btn-cancel').addEventListener('click', () => renderCatalogoRowView(row, item));
+
+    row.appendChild(fields);
+    row.appendChild(actions);
+  }
+
+  function saveCatalogEdit(item, patch) {
+    if (item.custom) {
+      const c = catalogEdits.custom.find((x) => x.id === item.id);
+      if (c) Object.assign(c, patch);
+    } else {
+      catalogEdits.edits[item.id] = patch;
+    }
+    saveCatalogEdits();
+    refreshEverything();
+    showToast('Producto actualizado.');
+  }
+
+  function deleteCatalogItem(item) {
+    if (item.custom) {
+      catalogEdits.custom = catalogEdits.custom.filter((x) => x.id !== item.id);
+    } else {
+      catalogEdits.deleted[item.id] = true;
+    }
+    delete state.checked[item.id];
+    saveState();
+    saveCatalogEdits();
+    refreshEverything();
+    showToast('Producto eliminado del catálogo.');
+  }
+
+  function populateGruposDatalist() {
+    const dl = document.getElementById('grupos-datalist');
+    const sections = catalogoView === 'rieles' ? EFFECTIVE.sectionsRieles : EFFECTIVE.sectionsBarras;
+    dl.innerHTML = sections.map((s) => `<option value="${escapeHtml(s.title)}"></option>`).join('');
+  }
+
+  function renderCatalogo() {
+    document.querySelectorAll('.catalogo-switch-btn').forEach((b) => b.classList.toggle('active', b.dataset.cat === catalogoView));
+    const sections = catalogoView === 'rieles' ? EFFECTIVE.sectionsRieles : EFFECTIVE.sectionsBarras;
+    const container = document.getElementById('catalogo-list');
+    container.innerHTML = '';
+    if (sections.length === 0) {
+      container.innerHTML = '<p class="empty-hint">No hay productos en este catálogo.</p>';
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    sections.forEach((section) => {
+      const wrap = document.createElement('section');
+      wrap.className = 'cat-section';
+      wrap.dataset.title = section.title;
+      if (openCatalogoSections[catalogoView].has(section.title)) wrap.classList.add('open');
+
+      const header = document.createElement('button');
+      header.type = 'button';
+      header.className = 'cat-header';
+      header.innerHTML =
+        `<span class="chevron">›</span>` +
+        `<span class="cat-title">${escapeHtml(section.title)}</span>` +
+        `<span class="cat-count">${section.items.length}</span>`;
+      header.addEventListener('click', () => {
+        const nowOpen = wrap.classList.toggle('open');
+        if (nowOpen) openCatalogoSections[catalogoView].add(section.title);
+        else openCatalogoSections[catalogoView].delete(section.title);
+      });
+
+      const body = document.createElement('div');
+      body.className = 'cat-body';
+      section.items.forEach((item) => body.appendChild(buildCatalogoRow(item)));
+
+      wrap.appendChild(header);
+      wrap.appendChild(body);
+      frag.appendChild(wrap);
+    });
+    container.appendChild(frag);
+  }
+
+  function initCatalogoTab() {
+    document.querySelectorAll('.catalogo-switch-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        catalogoView = btn.dataset.cat;
+        renderCatalogo();
+      });
+    });
+
+    const form = document.getElementById('producto-form');
+    const addBtn = document.getElementById('btn-add-producto');
+    const cancelBtn = document.getElementById('btn-cancel-producto');
+
+    addBtn.addEventListener('click', () => {
+      populateGruposDatalist();
+      form.hidden = false;
+      addBtn.hidden = true;
+      document.getElementById('prod-grupo').focus();
+    });
+    cancelBtn.addEventListener('click', () => {
+      form.reset();
+      form.hidden = true;
+      addBtn.hidden = false;
+    });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const grupo = document.getElementById('prod-grupo').value.trim();
+      const prod = document.getElementById('prod-nombre').value.trim();
+      const color = document.getElementById('prod-color').value.trim();
+      if (!grupo || !prod) {
+        alert('Indica al menos el grupo/sección y el producto.');
+        return;
+      }
+      catalogEdits.custom.push({ id: newCustomId(), catalogo: catalogoView, grupo, cat: '-Accesorio', prod, color });
+      saveCatalogEdits();
+      openCatalogoSections[catalogoView].add(grupo);
+      refreshEverything();
+      form.reset();
+      form.hidden = true;
+      addBtn.hidden = false;
+      showToast('Producto agregado al catálogo.');
+    });
+
+    document.getElementById('btn-restaurar-catalogo').addEventListener('click', () => {
+      const total = Object.keys(catalogEdits.edits).length + Object.keys(catalogEdits.deleted).length + catalogEdits.custom.length;
+      if (total === 0) return;
+      if (!confirm('¿Restaurar el catálogo a la versión original? Se perderán los productos agregados, editados o eliminados manualmente. No se puede deshacer.')) return;
+      catalogEdits = defaultCatalogEdits();
+      saveCatalogEdits();
+      refreshEverything();
+      showToast('Catálogo restaurado a la versión original.');
+    });
+  }
+
   // ---------- Resumen / filtros ----------
 
   function countMarked() {
     let lines = 0;
-    CATALOG_RIELES.forEach((it) => { if (state.checked[it.id]) lines++; });
-    CATALOG_BARRAS.forEach((it) => { if (state.checked[it.id]) lines++; });
+    EFFECTIVE.rieles.forEach((it) => { if (state.checked[it.id]) lines++; });
+    EFFECTIVE.barras.forEach((it) => { if (state.checked[it.id]) lines++; });
     lines += state.otros.length;
     return { lines };
   }
 
   function catalogProgress(tabKey) {
-    const list = tabKey === 'rieles' ? CATALOG_RIELES : tabKey === 'barras' ? CATALOG_BARRAS : null;
+    const list = tabKey === 'rieles' ? EFFECTIVE.rieles : tabKey === 'barras' ? EFFECTIVE.barras : null;
     if (!list) return null;
     const total = list.length;
     const done = list.filter((it) => state.checked[it.id]).length;
@@ -287,9 +581,8 @@
     }
 
     document.querySelectorAll(`#panel-${activeTab} .cat-section`).forEach((secEl) => {
-      const idx = Number(secEl.dataset.index);
-      const sections = activeTab === 'rieles' ? SECTIONS_RIELES : SECTIONS_BARRAS;
-      const section = sections[idx];
+      const sections = activeTab === 'rieles' ? EFFECTIVE.sectionsRieles : EFFECTIVE.sectionsBarras;
+      const section = sections.find((s) => s.title === secEl.dataset.title);
       if (!section) return;
       const { total, done } = sectionCounts(section);
       const countEl = secEl.querySelector('.cat-count');
@@ -327,6 +620,7 @@
         const showToolbar = activeTab === 'rieles' || activeTab === 'barras';
         document.querySelector('.toolbar').style.display = showToolbar ? '' : 'none';
         if (!showToolbar) document.getElementById('tab-progress').style.visibility = 'hidden';
+        if (activeTab === 'catalogo') renderCatalogo();
         applyFilters();
         updateSummary();
       });
@@ -378,8 +672,8 @@
   }
 
   function buildOrderData() {
-    const rielesGroups = groupByGrupo(CATALOG_RIELES);
-    const barrasGroups = groupByGrupo(CATALOG_BARRAS);
+    const rielesGroups = groupByGrupo(EFFECTIVE.rieles);
+    const barrasGroups = groupByGrupo(EFFECTIVE.barras);
     const otros = state.otros.map((o) => [o.cat || '', o.prod, o.color || '']);
     return { rielesGroups, barrasGroups, otros };
   }
@@ -637,8 +931,8 @@
     saveState();
     openSections.rieles.clear();
     openSections.barras.clear();
-    renderSections(SECTIONS_RIELES, 'panel-rieles-list', 'rieles');
-    renderSections(SECTIONS_BARRAS, 'panel-barras-list', 'barras');
+    renderSections(EFFECTIVE.sectionsRieles, 'panel-rieles-list', 'rieles');
+    renderSections(EFFECTIVE.sectionsBarras, 'panel-barras-list', 'barras');
     renderOtros();
     refreshHeaderForm();
     updateSummary();
@@ -653,13 +947,16 @@
   // ---------- Init ----------
 
   document.addEventListener('DOMContentLoaded', () => {
+    rebuildEffectiveCatalog();
+
     initHeaderForm();
     initTabs();
     initOtroForm();
     initHistoryClear();
+    initCatalogoTab();
 
-    renderSections(SECTIONS_RIELES, 'panel-rieles-list', 'rieles');
-    renderSections(SECTIONS_BARRAS, 'panel-barras-list', 'barras');
+    renderSections(EFFECTIVE.sectionsRieles, 'panel-rieles-list', 'rieles');
+    renderSections(EFFECTIVE.sectionsBarras, 'panel-barras-list', 'barras');
     renderOtros();
     renderHistory();
     updateSummary();

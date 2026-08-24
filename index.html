@@ -47,6 +47,7 @@
   <button type="button" class="tab-btn" data-tab="barras">Barras</button>
   <button type="button" class="tab-btn" data-tab="otros">Otros <span id="badge-otros" class="badge">0</span></button>
   <button type="button" class="tab-btn" data-tab="historial">Historial <span id="badge-historial" class="badge">0</span></button>
+  <button type="button" class="tab-btn" data-tab="catalogo">Catálogo</button>
 </nav>
 
 <div class="toolbar">
@@ -87,6 +88,29 @@
       <button type="button" id="btn-clear-historial" class="btn-link">Vaciar historial</button>
     </div>
     <div id="historial-list" class="section-list"></div>
+  </section>
+
+  <section id="panel-catalogo" class="tab-panel">
+    <p class="historial-hint">Agrega, edita o elimina productos del catálogo. Los cambios quedan guardados en este teléfono.</p>
+    <div class="catalogo-toolbar">
+      <div class="catalogo-switch">
+        <button type="button" class="catalogo-switch-btn active" data-cat="rieles">Guías</button>
+        <button type="button" class="catalogo-switch-btn" data-cat="barras">Barras</button>
+      </div>
+      <button type="button" id="btn-restaurar-catalogo" class="btn-link">Restaurar original</button>
+    </div>
+    <button type="button" id="btn-add-producto" class="btn btn-secondary catalogo-add-btn">+ Agregar producto</button>
+    <form id="producto-form" class="catalogo-form" hidden>
+      <input type="text" id="prod-grupo" placeholder="Grupo / sección *" required list="grupos-datalist">
+      <datalist id="grupos-datalist"></datalist>
+      <input type="text" id="prod-nombre" placeholder="Producto *" required>
+      <input type="text" id="prod-color" placeholder="Color (opcional)" class="otro-color-field">
+      <div class="catalogo-form-actions">
+        <button type="button" id="btn-cancel-producto" class="btn btn-ghost">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Agregar</button>
+      </div>
+    </form>
+    <div id="catalogo-list" class="section-list"></div>
   </section>
 </main>
 
