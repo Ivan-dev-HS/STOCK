@@ -319,6 +319,20 @@ main { padding: 10px 12px 16px; }
 .item-row.is-checked .item-color { background: rgba(255,255,255,0.6); }
 .item-nota { font-size: 0.7rem; color: var(--muted); font-style: italic; }
 
+.variant-picker { display: none; gap: 6px; flex-basis: 100%; }
+.item-row.is-checked .variant-picker { display: flex; }
+.variant-btn {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+}
+.variant-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
 .item-qty { display: none; gap: 6px; flex-shrink: 0; }
 .item-row.is-checked .item-qty { display: flex; }
 .qty-field input {

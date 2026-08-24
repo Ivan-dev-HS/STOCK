@@ -9,6 +9,7 @@
     checked: {},  // { itemId: true }                 -> marcado "hay que pedir"
     qty: {},      // { itemId: number }                -> cantidad opcional (Guías/Rieles)
     qtyDiam: {},  // { itemId: { d20, d28 } }           -> cantidad opcional (Barras)
+    variant: {},  // { itemId: 'Rielchyc' | 'Normal' }  -> variante elegida (items con item.variants)
     otros: [],    // [{ id, cat, prod, color, cantidad }]
   });
 
@@ -28,6 +29,7 @@
         checked: parsed.checked || {},
         qty: parsed.qty || {},
         qtyDiam: parsed.qtyDiam || {},
+        variant: parsed.variant || {},
         otros: Array.isArray(parsed.otros) ? parsed.otros : [],
       };
     } catch (e) {
@@ -79,7 +81,7 @@
     const label = document.createElement('label');
     label.className = 'item-row';
     label.dataset.id = item.id;
-    label.dataset.search = norm([item.cat, item.prod, item.color, item.nota].join(' '));
+    label.dataset.search = norm([item.cat, item.prod, item.color, item.nota, ...(item.variants || [])].join(' '));
 
     const isChecked = !!state.checked[item.id];
     if (isChecked) label.classList.add('is-checked');
@@ -99,6 +101,12 @@
       `<span class="item-name">${escapeHtml(item.prod)}</span>` +
       (item.color ? `<span class="item-color">${escapeHtml(item.color)}</span>` : '') +
       (item.nota ? `<span class="item-nota">${escapeHtml(item.nota)}</span>` : '');
+    if (item.variants) {
+      info.appendChild(variantPicker(item.variants, state.variant[item.id], (v) => {
+        state.variant[item.id] = v;
+        saveState();
+      }));
+    }
 
     const qtyBox = document.createElement('div');
     qtyBox.className = 'item-qty';
@@ -126,6 +134,12 @@
     chk.addEventListener('change', () => {
       state.checked[item.id] = chk.checked || undefined;
       if (!chk.checked) delete state.checked[item.id];
+      if (chk.checked && item.variants && !state.variant[item.id]) {
+        state.variant[item.id] = item.variants[0];
+        info.querySelectorAll('.variant-btn').forEach((btn) => {
+          btn.classList.toggle('active', btn.textContent === item.variants[0]);
+        });
+      }
       label.classList.toggle('is-checked', chk.checked);
       saveState();
       updateSummary();
@@ -137,6 +151,25 @@
     label.appendChild(info);
     label.appendChild(qtyBox);
     return label;
+  }
+
+  function variantPicker(variants, selected, onChange) {
+    const wrap = document.createElement('span');
+    wrap.className = 'variant-picker';
+    variants.forEach((v) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'variant-btn' + (selected === v ? ' active' : '');
+      btn.textContent = v;
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        wrap.querySelectorAll('.variant-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        onChange(v);
+      });
+      wrap.appendChild(btn);
+    });
+    return wrap;
   }
 
   function qtyInput(placeholder, value, onChange) {
@@ -371,10 +404,15 @@
 
   // ---------- Construcción de los datos del pedido ----------
 
+  function colorLabel(it) {
+    const variant = it.variants ? state.variant[it.id] : '';
+    return [it.color, variant].filter(Boolean).join(' · ');
+  }
+
   function buildOrderData() {
     const rieles = CATALOG_RIELES
       .filter((it) => state.checked[it.id])
-      .map((it) => [it.cat.replace(/^-/, ''), it.prod, it.color || '', state.qty[it.id] ? String(state.qty[it.id]) : 'Sí']);
+      .map((it) => [it.cat.replace(/^-/, ''), it.prod, colorLabel(it), state.qty[it.id] ? String(state.qty[it.id]) : 'Sí']);
 
     const barras = CATALOG_BARRAS
       .filter((it) => state.checked[it.id])

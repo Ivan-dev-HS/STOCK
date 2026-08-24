@@ -55,9 +55,9 @@ const CATALOG_RIELES = [
   { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Empalme Metálico', color: '' },
 
   // Guía Manual Blanco
-  { grupo: 'Guía Manual', cat: 'Guía Manual', prod: 'Guía Manual', color: 'Blanco', nota: 'Rielchyc o Normal' },
-  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Soporte Techo', color: 'Blanco', nota: 'Rielchyc o Normal' },
-  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Tapones', color: 'Blanco', nota: 'Rielchyc o Normal' },
+  { grupo: 'Guía Manual', cat: 'Guía Manual', prod: 'Guía Manual', color: 'Blanco', variants: ['Rielchyc', 'Normal'] },
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Soporte Techo', color: 'Blanco', variants: ['Rielchyc', 'Normal'] },
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Tapones', color: 'Blanco', variants: ['Rielchyc', 'Normal'] },
   { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Soporte Techo Metálico', color: 'Blanco' },
   { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Empalme Metálico', color: '' },
 
