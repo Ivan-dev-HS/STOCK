@@ -54,10 +54,14 @@ const CATALOG_RIELES = [
   { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Tapones', color: 'Negro' },
   { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Empalme Metálico', color: '' },
 
-  // Guía Manual Blanco
-  { grupo: 'Guía Manual', cat: 'Guía Manual', prod: 'Guía Manual', color: 'Blanco', variants: ['Rielchyc', 'Normal'] },
-  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Soporte Techo', color: 'Blanco', variants: ['Rielchyc', 'Normal'] },
-  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Tapones', color: 'Blanco', variants: ['Rielchyc', 'Normal'] },
+  // Guía Manual Blanco (Rielchyc o Normal: son dos variantes distintas,
+  // se listan por separado para poder pedir una, otra o ambas)
+  { grupo: 'Guía Manual', cat: 'Guía Manual', prod: 'Guía Manual', color: 'Blanco (Rielchyc)' },
+  { grupo: 'Guía Manual', cat: 'Guía Manual', prod: 'Guía Manual', color: 'Blanco (Normal)' },
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Soporte Techo', color: 'Blanco (Rielchyc)' },
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Soporte Techo', color: 'Blanco (Normal)' },
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Tapones', color: 'Blanco (Rielchyc)' },
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Tapones', color: 'Blanco (Normal)' },
   { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Soporte Techo Metálico', color: 'Blanco' },
   { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Empalme Metálico', color: '' },
 
@@ -141,9 +145,28 @@ const CATALOG_BARRAS = [
   { grupo: 'Barrita a alcayata', cat: '-Barrita a alcayata', prod: 'Barrita de 20/46', color: '' },
 ];
 
-// Asigna un id estable a cada fila del catálogo según su posición.
-CATALOG_RIELES.forEach((item, i) => { item.id = 'r' + i; });
-CATALOG_BARRAS.forEach((item, i) => { item.id = 'b' + i; });
+// Asigna un id estable a cada fila según su contenido (no su posición),
+// para que agregar o reordenar productos no descuadre lo que un usuario
+// ya tenga marcado y guardado en su teléfono.
+function slugify(s) {
+  return (s || '')
+    .toString()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+function assignIds(list, prefix) {
+  const seen = new Map();
+  list.forEach((item) => {
+    const base = prefix + '-' + slugify([item.grupo, item.cat, item.prod, item.color].join('-'));
+    const n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
+    item.id = n === 1 ? base : `${base}-${n}`;
+  });
+}
+assignIds(CATALOG_RIELES, 'r');
+assignIds(CATALOG_BARRAS, 'b');
 
 // Agrupa los items consecutivos que comparten "grupo" en secciones,
 // preservando el orden del catálogo original.
