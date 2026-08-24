@@ -1,29 +1,31 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'inventarioPedidoV1';
+  const STORAGE_KEY = 'inventarioPedidoV2';
   const todayISO = () => new Date().toISOString().slice(0, 10);
 
   const defaultState = () => ({
     header: { sucursal: '', solicitante: '', fecha: todayISO(), observaciones: '' },
-    qty: {},      // { itemId: number }               -> catálogo Guías/Rieles
-    qtyDiam: {},  // { itemId: { d20, d28 } }          -> catálogo Barras
+    checked: {},  // { itemId: true }                 -> marcado "hay que pedir"
+    qty: {},      // { itemId: number }                -> cantidad opcional (Guías/Rieles)
+    qtyDiam: {},  // { itemId: { d20, d28 } }           -> cantidad opcional (Barras)
     otros: [],    // [{ id, cat, prod, color, cantidad }]
   });
 
   let state = loadState();
   let onlyMarked = false;
   let activeTab = 'rieles';
-  let saveTimer = null;
+  const openSections = { rieles: new Set(), barras: new Set() };
 
   function loadState() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return defaultState();
+      if (!raw) return migrateOldState();
       const parsed = JSON.parse(raw);
       const base = defaultState();
       return {
         header: { ...base.header, ...(parsed.header || {}) },
+        checked: parsed.checked || {},
         qty: parsed.qty || {},
         qtyDiam: parsed.qtyDiam || {},
         otros: Array.isArray(parsed.otros) ? parsed.otros : [],
@@ -33,11 +35,30 @@
     }
   }
 
+  // Compatibilidad con la versión anterior (v1: solo cantidades, sin checkbox).
+  function migrateOldState() {
+    const base = defaultState();
+    try {
+      const raw = localStorage.getItem('inventarioPedidoV1');
+      if (!raw) return base;
+      const old = JSON.parse(raw);
+      base.header = { ...base.header, ...(old.header || {}) };
+      base.qty = old.qty || {};
+      base.qtyDiam = old.qtyDiam || {};
+      base.otros = Array.isArray(old.otros) ? old.otros : [];
+      Object.keys(base.qty).forEach((id) => { if (base.qty[id] > 0) base.checked[id] = true; });
+      Object.keys(base.qtyDiam).forEach((id) => {
+        const v = base.qtyDiam[id];
+        if ((v.d20 || 0) > 0 || (v.d28 || 0) > 0) base.checked[id] = true;
+      });
+    } catch (e) { /* ignora */ }
+    return base;
+  }
+
   function saveState() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    }, 200);
+    // Guardado inmediato (sin debounce): el JSON es pequeño y así no se
+    // pierde una marca si el usuario cierra la app justo después.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
   const ACCENTS = { á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u', ñ: 'n', ü: 'u' };
@@ -48,91 +69,140 @@
       .replace(/[áéíóúñü]/g, (c) => ACCENTS[c] || c);
   }
 
-  // ---------- Render de listas ----------
-
-  function buildRow(item, kind) {
-    const row = document.createElement('div');
-    const isMain = !item.cat.startsWith('-');
-    row.className = 'item-row' + (isMain ? ' is-main' : ' is-accessory');
-    row.dataset.search = norm([item.cat, item.prod, item.color, item.nota].join(' '));
-
-    const info = document.createElement('div');
-    info.className = 'item-info';
-    info.innerHTML =
-      `<span class="item-cat">${escapeHtml(item.cat.replace(/^-/, ''))}</span>` +
-      `<span class="item-name">${escapeHtml(item.prod)}</span>` +
-      (item.color ? `<span class="item-color">${escapeHtml(item.color)}</span>` : '') +
-      (item.nota ? `<span class="item-nota">${escapeHtml(item.nota)}</span>` : '');
-    row.appendChild(info);
-
-    const qtyBox = document.createElement('div');
-    qtyBox.className = 'item-qty';
-
-    if (item.diam) {
-      qtyBox.appendChild(qtyInput(item.id, 'D20', state.qtyDiam[item.id]?.d20, (v) => {
-        state.qtyDiam[item.id] = state.qtyDiam[item.id] || {};
-        state.qtyDiam[item.id].d20 = v;
-        afterChange(row);
-      }));
-      qtyBox.appendChild(qtyInput(item.id, 'D28', state.qtyDiam[item.id]?.d28, (v) => {
-        state.qtyDiam[item.id] = state.qtyDiam[item.id] || {};
-        state.qtyDiam[item.id].d28 = v;
-        afterChange(row);
-      }));
-    } else {
-      qtyBox.appendChild(qtyInput(item.id, 'Cant.', state.qty[item.id], (v) => {
-        state.qty[item.id] = v;
-        afterChange(row);
-      }));
-    }
-    row.appendChild(qtyBox);
-    return row;
-  }
-
-  function qtyInput(id, label, value, onChange) {
-    const wrap = document.createElement('label');
-    wrap.className = 'qty-field';
-    const span = document.createElement('span');
-    span.className = 'qty-label';
-    span.textContent = label;
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.inputMode = 'numeric';
-    input.min = '0';
-    input.placeholder = '0';
-    input.value = value ? String(value) : '';
-    input.addEventListener('input', () => {
-      const n = parseInt(input.value, 10);
-      onChange(Number.isFinite(n) && n > 0 ? n : undefined);
-      saveState();
-    });
-    wrap.appendChild(span);
-    wrap.appendChild(input);
-    return wrap;
-  }
-
-  function afterChange(row) {
-    row.classList.toggle('has-qty', rowHasQty(row));
-    updateSummary();
-    applyFilters();
-  }
-
-  function rowHasQty(row) {
-    return [...row.querySelectorAll('input[type=number]')].some((i) => parseInt(i.value, 10) > 0);
-  }
-
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  function renderCatalog(list, containerId) {
+  // ---------- Render de catálogos (secciones plegables) ----------
+
+  function buildItemRow(item) {
+    const label = document.createElement('label');
+    label.className = 'item-row';
+    label.dataset.id = item.id;
+    label.dataset.search = norm([item.cat, item.prod, item.color, item.nota].join(' '));
+
+    const isChecked = !!state.checked[item.id];
+    if (isChecked) label.classList.add('is-checked');
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.className = 'chk';
+    chk.checked = isChecked;
+
+    const box = document.createElement('span');
+    box.className = 'check-box';
+    box.setAttribute('aria-hidden', 'true');
+
+    const info = document.createElement('div');
+    info.className = 'item-info';
+    info.innerHTML =
+      `<span class="item-name">${escapeHtml(item.prod)}</span>` +
+      (item.color ? `<span class="item-color">${escapeHtml(item.color)}</span>` : '') +
+      (item.nota ? `<span class="item-nota">${escapeHtml(item.nota)}</span>` : '');
+
+    const qtyBox = document.createElement('div');
+    qtyBox.className = 'item-qty';
+    if (item.diam) {
+      qtyBox.appendChild(qtyInput('D20', state.qtyDiam[item.id]?.d20, (v) => {
+        state.qtyDiam[item.id] = state.qtyDiam[item.id] || {};
+        state.qtyDiam[item.id].d20 = v;
+        saveState();
+        updateSummary();
+      }));
+      qtyBox.appendChild(qtyInput('D28', state.qtyDiam[item.id]?.d28, (v) => {
+        state.qtyDiam[item.id] = state.qtyDiam[item.id] || {};
+        state.qtyDiam[item.id].d28 = v;
+        saveState();
+        updateSummary();
+      }));
+    } else {
+      qtyBox.appendChild(qtyInput('Cant.', state.qty[item.id], (v) => {
+        state.qty[item.id] = v;
+        saveState();
+        updateSummary();
+      }));
+    }
+
+    chk.addEventListener('change', () => {
+      state.checked[item.id] = chk.checked || undefined;
+      if (!chk.checked) delete state.checked[item.id];
+      label.classList.toggle('is-checked', chk.checked);
+      saveState();
+      updateSummary();
+      applyFilters();
+    });
+
+    label.appendChild(chk);
+    label.appendChild(box);
+    label.appendChild(info);
+    label.appendChild(qtyBox);
+    return label;
+  }
+
+  function qtyInput(placeholder, value, onChange) {
+    const wrap = document.createElement('span');
+    wrap.className = 'qty-field';
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.inputMode = 'numeric';
+    input.min = '0';
+    input.placeholder = placeholder;
+    input.value = value ? String(value) : '';
+    input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('mousedown', (e) => e.stopPropagation());
+    input.addEventListener('input', () => {
+      const n = parseInt(input.value, 10);
+      onChange(Number.isFinite(n) && n > 0 ? n : undefined);
+    });
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+  function sectionCounts(section) {
+    const total = section.items.length;
+    const done = section.items.filter((it) => state.checked[it.id]).length;
+    return { total, done };
+  }
+
+  function buildSectionEl(section, sectionIndex, tabKey) {
+    const wrap = document.createElement('section');
+    wrap.className = 'cat-section';
+    wrap.dataset.index = String(sectionIndex);
+
+    const { total, done } = sectionCounts(section);
+    const isOpen = openSections[tabKey].has(sectionIndex);
+    if (isOpen) wrap.classList.add('open');
+
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'cat-header';
+    header.innerHTML =
+      `<span class="chevron">›</span>` +
+      `<span class="cat-title">${escapeHtml(section.title)}</span>` +
+      `<span class="cat-count${done ? ' has-marked' : ''}">${done}/${total}</span>`;
+    header.addEventListener('click', () => {
+      const nowOpen = wrap.classList.toggle('open');
+      if (nowOpen) openSections[tabKey].add(sectionIndex);
+      else openSections[tabKey].delete(sectionIndex);
+    });
+
+    const body = document.createElement('div');
+    body.className = 'cat-body';
+    section.items.forEach((item) => body.appendChild(buildItemRow(item)));
+
+    wrap.appendChild(header);
+    wrap.appendChild(body);
+    return wrap;
+  }
+
+  function renderSections(sections, containerId, tabKey) {
     const container = document.getElementById(containerId);
     container.innerHTML = '';
     const frag = document.createDocumentFragment();
-    list.forEach((item) => {
-      const row = buildRow(item);
-      if (rowHasQty(row)) row.classList.add('has-qty');
-      frag.appendChild(row);
+    sections.forEach((section, i) => {
+      const { done } = sectionCounts(section);
+      if (done > 0) openSections[tabKey].add(i);
+      frag.appendChild(buildSectionEl(section, i, tabKey));
     });
     container.appendChild(frag);
   }
@@ -148,12 +218,13 @@
     }
     state.otros.forEach((o) => {
       const row = document.createElement('div');
-      row.className = 'item-row is-main otro-row';
+      row.className = 'item-row is-checked otro-row';
       row.innerHTML =
+        `<span class="check-box static" aria-hidden="true"></span>` +
         `<div class="item-info">` +
-        `<span class="item-cat">${escapeHtml(o.cat || 'Otro')}</span>` +
         `<span class="item-name">${escapeHtml(o.prod)}</span>` +
         (o.color ? `<span class="item-color">${escapeHtml(o.color)}</span>` : '') +
+        (o.cat ? `<span class="item-nota">${escapeHtml(o.cat)}</span>` : '') +
         `</div>` +
         `<div class="item-qty"><span class="qty-fixed">${o.cantidad}</span>` +
         `<button type="button" class="btn-icon btn-remove" aria-label="Eliminar">✕</button></div>`;
@@ -174,12 +245,13 @@
       const cat = document.getElementById('otro-cat').value.trim();
       const prod = document.getElementById('otro-prod').value.trim();
       const color = document.getElementById('otro-color').value.trim();
-      const cantidad = parseInt(document.getElementById('otro-cant').value, 10);
-      if (!prod || !Number.isFinite(cantidad) || cantidad <= 0) {
-        alert('Indica al menos el nombre del producto y una cantidad mayor que 0.');
+      const cantidadRaw = document.getElementById('otro-cant').value.trim();
+      const cantidad = cantidadRaw ? parseInt(cantidadRaw, 10) : 1;
+      if (!prod) {
+        alert('Indica al menos el nombre del producto.');
         return;
       }
-      state.otros.push({ id: 'o' + Date.now(), cat, prod, color, cantidad });
+      state.otros.push({ id: 'o' + Date.now(), cat, prod, color, cantidad: Number.isFinite(cantidad) && cantidad > 0 ? cantidad : 1 });
       saveState();
       form.reset();
       renderOtros();
@@ -192,14 +264,27 @@
   function countMarked() {
     let lines = 0;
     let units = 0;
-    Object.values(state.qty).forEach((v) => { if (v > 0) { lines++; units += v; } });
-    Object.values(state.qtyDiam).forEach((v) => {
-      const d20 = v.d20 || 0, d28 = v.d28 || 0;
-      if (d20 > 0) { lines++; units += d20; }
-      if (d28 > 0) { lines++; units += d28; }
+    CATALOG_RIELES.forEach((it) => {
+      if (!state.checked[it.id]) return;
+      lines++;
+      units += state.qty[it.id] || 1;
+    });
+    CATALOG_BARRAS.forEach((it) => {
+      if (!state.checked[it.id]) return;
+      lines++;
+      const d = state.qtyDiam[it.id] || {};
+      units += (d.d20 || 0) + (d.d28 || 0) || 1;
     });
     state.otros.forEach((o) => { lines++; units += o.cantidad; });
     return { lines, units };
+  }
+
+  function catalogProgress(tabKey) {
+    const list = tabKey === 'rieles' ? CATALOG_RIELES : tabKey === 'barras' ? CATALOG_BARRAS : null;
+    if (!list) return null;
+    const total = list.length;
+    const done = list.filter((it) => state.checked[it.id]).length;
+    return { total, done };
   }
 
   function updateSummary() {
@@ -208,14 +293,44 @@
     document.getElementById('summary-units').textContent = units;
     document.getElementById('badge-otros').textContent = state.otros.length;
     document.getElementById('badge-otros').style.display = state.otros.length ? 'inline-flex' : 'none';
+
+    const progress = document.getElementById('tab-progress');
+    const fill = document.getElementById('tab-progress-fill');
+    const prog = catalogProgress(activeTab);
+    if (prog) {
+      progress.style.visibility = 'visible';
+      fill.style.width = (prog.total ? (prog.done / prog.total) * 100 : 0) + '%';
+    } else {
+      progress.style.visibility = 'hidden';
+    }
+
+    document.querySelectorAll(`#panel-${activeTab} .cat-section`).forEach((secEl) => {
+      const idx = Number(secEl.dataset.index);
+      const sections = activeTab === 'rieles' ? SECTIONS_RIELES : SECTIONS_BARRAS;
+      const section = sections[idx];
+      if (!section) return;
+      const { total, done } = sectionCounts(section);
+      const countEl = secEl.querySelector('.cat-count');
+      countEl.textContent = `${done}/${total}`;
+      countEl.classList.toggle('has-marked', done > 0);
+    });
   }
 
   function applyFilters() {
     const q = norm(document.getElementById('search-input').value);
-    document.querySelectorAll('#panel-' + activeTab + ' .item-row').forEach((row) => {
-      const matchesSearch = !q || row.dataset.search.includes(q);
-      const matchesOnlyMarked = !onlyMarked || row.classList.contains('has-qty');
-      row.style.display = matchesSearch && matchesOnlyMarked ? '' : 'none';
+    const filtering = !!q || onlyMarked;
+
+    document.querySelectorAll(`#panel-${activeTab} .cat-section`).forEach((secEl) => {
+      let visibleCount = 0;
+      secEl.querySelectorAll('.item-row').forEach((row) => {
+        const matchesSearch = !q || row.dataset.search.includes(q);
+        const matchesOnlyMarked = !onlyMarked || row.classList.contains('is-checked');
+        const visible = matchesSearch && matchesOnlyMarked;
+        row.style.display = visible ? '' : 'none';
+        if (visible) visibleCount++;
+      });
+      secEl.style.display = visibleCount === 0 && filtering ? 'none' : '';
+      secEl.classList.toggle('force-open', filtering && visibleCount > 0);
     });
   }
 
@@ -228,6 +343,7 @@
         document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
         document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + activeTab));
         applyFilters();
+        updateSummary();
       });
     });
   }
@@ -244,22 +360,30 @@
         saveState();
       });
     });
+
+    const toggle = document.getElementById('order-header-toggle');
+    const panel = document.getElementById('order-header-fields');
+    toggle.addEventListener('click', () => {
+      const open = panel.classList.toggle('open');
+      toggle.classList.toggle('open', open);
+    });
   }
 
   // ---------- Construcción de los datos del pedido ----------
 
   function buildOrderData() {
     const rieles = CATALOG_RIELES
-      .filter((it) => (state.qty[it.id] || 0) > 0)
-      .map((it) => [it.cat.replace(/^-/, ''), it.prod, it.color || '', String(state.qty[it.id])]);
+      .filter((it) => state.checked[it.id])
+      .map((it) => [it.cat.replace(/^-/, ''), it.prod, it.color || '', state.qty[it.id] ? String(state.qty[it.id]) : 'Sí']);
 
     const barras = CATALOG_BARRAS
-      .filter((it) => (state.qtyDiam[it.id]?.d20 || 0) > 0 || (state.qtyDiam[it.id]?.d28 || 0) > 0)
-      .map((it) => [
-        it.cat.replace(/^-/, ''), it.prod, it.color || '',
-        state.qtyDiam[it.id]?.d20 ? String(state.qtyDiam[it.id].d20) : '',
-        state.qtyDiam[it.id]?.d28 ? String(state.qtyDiam[it.id].d28) : '',
-      ]);
+      .filter((it) => state.checked[it.id])
+      .map((it) => {
+        const d = state.qtyDiam[it.id] || {};
+        const d20 = d.d20 ? String(d.d20) : '';
+        const d28 = d.d28 ? String(d.d28) : '';
+        return [it.cat.replace(/^-/, ''), it.prod, it.color || '', d20 || (d28 ? '' : 'Sí'), d28];
+      });
 
     const otros = state.otros.map((o) => [o.cat || '', o.prod, o.color || '', String(o.cantidad)]);
 
@@ -271,7 +395,7 @@
   function generatePDF() {
     const { rieles, barras, otros } = buildOrderData();
     if (!rieles.length && !barras.length && !otros.length) {
-      alert('No hay productos con cantidad indicada. Marca al menos un producto antes de generar el pedido.');
+      alert('No hay productos marcados. Marca al menos un producto antes de generar el pedido.');
       return;
     }
     const { jsPDF } = window.jspdf;
@@ -357,7 +481,7 @@
     if (y > 740) { doc.addPage(); y = 50; }
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Total líneas: ${lines}   Total unidades: ${units}`, marginX, y);
+    doc.text(`Total líneas: ${lines}   Total unidades aprox.: ${units}`, marginX, y);
     y += 40;
     doc.text('Firma / Recibido:', marginX, y);
     doc.line(marginX + 90, y, marginX + 300, y);
@@ -387,14 +511,14 @@
       table('Sistemas de Guías y Rieles', ['Categoría', 'Producto', 'Color', 'Cantidad'], rieles) +
       table('Sistemas de Barras', ['Categoría', 'Producto', 'Color', 'D20', 'D28'], barras) +
       table('Productos adicionales', ['Categoría', 'Producto', 'Color', 'Cantidad'], otros) +
-      `<p class="print-total">Total líneas: ${lines} &nbsp;&nbsp; Total unidades: ${units}</p>` +
+      `<p class="print-total">Total líneas: ${lines} &nbsp;&nbsp; Total unidades aprox.: ${units}</p>` +
       `<p class="print-firma">Firma / Recibido: __________________________</p>`;
   }
 
   function printOrder() {
     const { rieles, barras, otros } = buildOrderData();
     if (!rieles.length && !barras.length && !otros.length) {
-      alert('No hay productos con cantidad indicada. Marca al menos un producto antes de imprimir.');
+      alert('No hay productos marcados. Marca al menos un producto antes de imprimir.');
       return;
     }
     buildPrintView();
@@ -404,15 +528,19 @@
   // ---------- Vaciar ----------
 
   function clearAll() {
-    if (!confirm('¿Vaciar todas las cantidades y productos adicionales? Los datos de sucursal/solicitante se mantienen.')) return;
+    if (!confirm('¿Vaciar todo lo marcado y los productos adicionales? Los datos de sucursal/solicitante se mantienen.')) return;
+    state.checked = {};
     state.qty = {};
     state.qtyDiam = {};
     state.otros = [];
     saveState();
-    renderCatalog(CATALOG_RIELES, 'panel-rieles-list');
-    renderCatalog(CATALOG_BARRAS, 'panel-barras-list');
+    openSections.rieles.clear();
+    openSections.barras.clear();
+    renderSections(SECTIONS_RIELES, 'panel-rieles-list', 'rieles');
+    renderSections(SECTIONS_BARRAS, 'panel-barras-list', 'barras');
     renderOtros();
     updateSummary();
+    applyFilters();
   }
 
   // ---------- Init ----------
@@ -422,8 +550,8 @@
     initTabs();
     initOtroForm();
 
-    renderCatalog(CATALOG_RIELES, 'panel-rieles-list');
-    renderCatalog(CATALOG_BARRAS, 'panel-barras-list');
+    renderSections(SECTIONS_RIELES, 'panel-rieles-list', 'rieles');
+    renderSections(SECTIONS_BARRAS, 'panel-barras-list', 'barras');
     renderOtros();
     updateSummary();
     applyFilters();

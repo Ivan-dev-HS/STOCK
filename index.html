@@ -4,32 +4,45 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Inventario de Pedidos</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%2325405a'/%3E%3Ctext x='50' y='66' font-size='58' text-anchor='middle' fill='white' font-family='Arial'%3E%F0%9F%93%8B%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%231b2f4b'/%3E%3Cpath d='M28 46l14 14 30-30' stroke='%2347d18c' stroke-width='10' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 
 <header class="app-header">
-  <h1>Inventario de Pedidos</h1>
-  <p class="app-subtitle">Marca lo que hay que pedir y genera el PDF para la sección de pedidos</p>
+  <div class="app-header-inner">
+    <span class="app-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
+    </span>
+    <div>
+      <h1>Inventario de Pedidos</h1>
+      <p class="app-subtitle">Marca lo que hay que pedir y genera el PDF para la sección de pedidos</p>
+    </div>
+  </div>
 </header>
 
 <section class="order-header">
-  <div class="field">
-    <label for="f-sucursal">Sucursal / Local</label>
-    <input type="text" id="f-sucursal" placeholder="Ej: Local Centro">
-  </div>
-  <div class="field">
-    <label for="f-solicitante">Solicitado por</label>
-    <input type="text" id="f-solicitante" placeholder="Tu nombre">
-  </div>
-  <div class="field">
-    <label for="f-fecha">Fecha</label>
-    <input type="date" id="f-fecha">
-  </div>
-  <div class="field field-wide">
-    <label for="f-observaciones">Observaciones</label>
-    <textarea id="f-observaciones" rows="2" placeholder="Notas para el pedido (opcional)"></textarea>
+  <button type="button" id="order-header-toggle" class="order-header-toggle">
+    <span>Datos del pedido</span>
+    <span class="chevron">›</span>
+  </button>
+  <div id="order-header-fields" class="order-header-fields">
+    <div class="field">
+      <label for="f-sucursal">Sucursal / Local</label>
+      <input type="text" id="f-sucursal" placeholder="Ej: Local Centro">
+    </div>
+    <div class="field">
+      <label for="f-solicitante">Solicitado por</label>
+      <input type="text" id="f-solicitante" placeholder="Tu nombre">
+    </div>
+    <div class="field">
+      <label for="f-fecha">Fecha</label>
+      <input type="date" id="f-fecha">
+    </div>
+    <div class="field field-wide">
+      <label for="f-observaciones">Observaciones</label>
+      <textarea id="f-observaciones" rows="2" placeholder="Notas para el pedido (opcional)"></textarea>
+    </div>
   </div>
 </section>
 
@@ -40,20 +53,25 @@
 </nav>
 
 <div class="toolbar">
-  <input type="search" id="search-input" placeholder="Buscar producto, color, categoría...">
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    <input type="search" id="search-input" placeholder="Buscar producto, color...">
+  </div>
   <label class="check-label">
     <input type="checkbox" id="only-marked">
-    Ver solo marcados
+    Solo marcados
   </label>
 </div>
 
+<div id="tab-progress" class="progress-bar"><div id="tab-progress-fill" class="progress-fill"></div></div>
+
 <main>
   <section id="panel-rieles" class="tab-panel active">
-    <div id="panel-rieles-list" class="item-list"></div>
+    <div id="panel-rieles-list" class="section-list"></div>
   </section>
 
   <section id="panel-barras" class="tab-panel">
-    <div id="panel-barras-list" class="item-list"></div>
+    <div id="panel-barras-list" class="section-list"></div>
   </section>
 
   <section id="panel-otros" class="tab-panel">
@@ -61,7 +79,7 @@
       <input type="text" id="otro-cat" placeholder="Categoría (opcional)">
       <input type="text" id="otro-prod" placeholder="Producto *" required>
       <input type="text" id="otro-color" placeholder="Color (opcional)">
-      <input type="number" id="otro-cant" placeholder="Cant. *" min="1" required>
+      <input type="number" id="otro-cant" placeholder="Cant." min="1">
       <button type="submit">Agregar</button>
     </form>
     <div id="otros-list" class="item-list"></div>
