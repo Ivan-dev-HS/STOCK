@@ -43,9 +43,10 @@
 </section>
 
 <nav class="tab-bar">
-  <button type="button" class="tab-btn active" data-tab="rieles">Guías y Rieles</button>
+  <button type="button" class="tab-btn active" data-tab="rieles">Guías</button>
   <button type="button" class="tab-btn" data-tab="barras">Barras</button>
   <button type="button" class="tab-btn" data-tab="otros">Otros <span id="badge-otros" class="badge">0</span></button>
+  <button type="button" class="tab-btn" data-tab="historial">Historial <span id="badge-historial" class="badge">0</span></button>
 </nav>
 
 <div class="toolbar">
@@ -79,6 +80,14 @@
       <button type="submit">Agregar</button>
     </form>
     <div id="otros-list" class="item-list"></div>
+  </section>
+
+  <section id="panel-historial" class="tab-panel">
+    <div class="historial-toolbar">
+      <p class="historial-hint">Pedidos que ya generaste en PDF o imprimiste.</p>
+      <button type="button" id="btn-clear-historial" class="btn-link">Vaciar historial</button>
+    </div>
+    <div id="historial-list" class="section-list"></div>
   </section>
 </main>
 

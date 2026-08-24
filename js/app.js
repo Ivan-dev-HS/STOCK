@@ -2,6 +2,8 @@
   'use strict';
 
   const STORAGE_KEY = 'inventarioPedidoV3';
+  const HISTORY_KEY = 'inventarioHistorialV1';
+  const HISTORY_MAX = 50;
   const todayISO = () => new Date().toISOString().slice(0, 10);
 
   const defaultState = () => ({
@@ -13,9 +15,11 @@
   });
 
   let state = loadState();
+  let history = loadHistory();
   let onlyMarked = false;
   let activeTab = 'rieles';
   const openSections = { rieles: new Set(), barras: new Set() };
+  const openHistory = new Set();
 
   function loadState() {
     try {
@@ -57,6 +61,21 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveHistory() {
+    if (history.length > HISTORY_MAX) history.length = HISTORY_MAX;
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  }
+
   const ACCENTS = { á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u', ñ: 'n', ü: 'u' };
   function norm(s) {
     return (s || '')
@@ -67,6 +86,30 @@
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function formatFechaLarga(iso) {
+    if (!iso) return '-';
+    const [y, m, d] = iso.split('-');
+    if (!y || !m || !d) return iso;
+    return `${d}/${m}/${y}`;
+  }
+
+  // ---------- Aviso flotante (toast) ----------
+
+  let toastTimer = null;
+  function showToast(message) {
+    let el = document.getElementById('toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'toast';
+      el.className = 'toast';
+      document.body.appendChild(el);
+    }
+    el.textContent = message;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
   }
 
   // ---------- Render de catálogos (secciones plegables) ----------
@@ -289,6 +332,8 @@
     document.getElementById('summary-units').textContent = units;
     document.getElementById('badge-otros').textContent = state.otros.length;
     document.getElementById('badge-otros').style.display = state.otros.length ? 'inline-flex' : 'none';
+    document.getElementById('badge-historial').textContent = history.length;
+    document.getElementById('badge-historial').style.display = history.length ? 'inline-flex' : 'none';
 
     const progress = document.getElementById('tab-progress');
     const fill = document.getElementById('tab-progress-fill');
@@ -338,6 +383,9 @@
         activeTab = btn.dataset.tab;
         document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
         document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + activeTab));
+        const showToolbar = activeTab === 'rieles' || activeTab === 'barras';
+        document.querySelector('.toolbar').style.display = showToolbar ? '' : 'none';
+        if (!showToolbar) document.getElementById('tab-progress').style.visibility = 'hidden';
         applyFilters();
         updateSummary();
       });
@@ -365,6 +413,11 @@
     });
   }
 
+  function refreshHeaderForm() {
+    document.getElementById('f-fecha').value = state.header.fecha;
+    document.getElementById('f-observaciones').value = state.header.observaciones;
+  }
+
   // ---------- Construcción de los datos del pedido ----------
 
   function buildOrderData() {
@@ -388,12 +441,8 @@
 
   // ---------- Generación de PDF ----------
 
-  function generatePDF() {
-    const { rieles, barras, otros } = buildOrderData();
-    if (!rieles.length && !barras.length && !otros.length) {
-      alert('No hay productos marcados. Marca al menos un producto antes de generar el pedido.');
-      return;
-    }
+  function renderPdfDoc(header, data, totals) {
+    const { rieles, barras, otros } = data;
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     const marginX = 40;
@@ -404,18 +453,17 @@
     doc.text('PEDIDO DE MATERIAL', marginX, y);
     y += 26;
 
-    const h = state.header;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.text(`Fecha: ${h.fecha || todayISO()}`, marginX, y);
+    doc.text(`Fecha: ${header.fecha || todayISO()}`, marginX, y);
     y += 20;
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Solicitado por: ${h.solicitante || '-'}`, marginX, y);
+    doc.text(`Solicitado por: ${header.solicitante || '-'}`, marginX, y);
     y += 14;
-    if (h.observaciones) {
-      const wrapped = doc.splitTextToSize(`Observaciones: ${h.observaciones}`, 515);
+    if (header.observaciones) {
+      const wrapped = doc.splitTextToSize(`Observaciones: ${header.observaciones}`, 515);
       doc.text(wrapped, marginX, y);
       y += wrapped.length * 12 + 4;
     }
@@ -474,65 +522,183 @@
       y = doc.lastAutoTable.finalY + 26;
     }
 
-    const { lines, units } = countMarked();
     if (y > 740) { doc.addPage(); y = 50; }
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Total líneas: ${lines}   Total unidades aprox.: ${units}`, marginX, y);
+    doc.text(`Total líneas: ${totals.lines}   Total unidades aprox.: ${totals.units}`, marginX, y);
 
-    doc.save(`Pedido_Material_${h.fecha || todayISO()}.pdf`);
+    return doc;
+  }
+
+  function generatePDF() {
+    const data = buildOrderData();
+    if (!data.rieles.length && !data.barras.length && !data.otros.length) {
+      alert('No hay productos marcados. Marca al menos un producto antes de generar el pedido.');
+      return;
+    }
+    const totals = countMarked();
+    const doc = renderPdfDoc(state.header, data, totals);
+    doc.save(`Pedido_Material_${state.header.fecha || todayISO()}.pdf`);
+    saveToHistory(data, totals);
+    performClear();
+    showToast('Pedido guardado en el historial. Se vaciaron las marcas para el próximo pedido.');
   }
 
   // ---------- Vista de impresión ----------
 
-  function buildPrintView() {
-    const { rieles, barras, otros } = buildOrderData();
-    const h = state.header;
-    const { lines, units } = countMarked();
-
+  function buildPrintHtml(header, data, totals) {
+    const { rieles, barras, otros } = data;
     const table = (title, headers, rows) => {
       if (!rows.length) return '';
       return `<h2>${title}</h2><table><thead><tr>${headers.map((x) => `<th>${x}</th>`).join('')}</tr></thead>` +
         `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     };
-
-    document.getElementById('print-area').innerHTML =
-      `<h1>Pedido de Material</h1>` +
-      `<p class="print-fecha"><strong>Fecha:</strong> ${escapeHtml(h.fecha || todayISO())}</p>` +
-      `<p><strong>Solicitado por:</strong> ${escapeHtml(h.solicitante || '-')}</p>` +
-      (h.observaciones ? `<p><strong>Observaciones:</strong> ${escapeHtml(h.observaciones)}</p>` : '') +
+    return `<h1>Pedido de Material</h1>` +
+      `<p class="print-fecha"><strong>Fecha:</strong> ${escapeHtml(header.fecha || todayISO())}</p>` +
+      `<p><strong>Solicitado por:</strong> ${escapeHtml(header.solicitante || '-')}</p>` +
+      (header.observaciones ? `<p><strong>Observaciones:</strong> ${escapeHtml(header.observaciones)}</p>` : '') +
       table('Sistemas de Guías y Rieles', ['Categoría', 'Producto', 'Color', 'Cantidad'], rieles) +
       table('Sistemas de Barras', ['Categoría', 'Producto', 'Color', 'D20', 'D28'], barras) +
       table('Productos adicionales', ['Categoría', 'Producto', 'Color', 'Cantidad'], otros) +
-      `<p class="print-total">Total líneas: ${lines} &nbsp;&nbsp; Total unidades aprox.: ${units}</p>`;
+      `<p class="print-total">Total líneas: ${totals.lines} &nbsp;&nbsp; Total unidades aprox.: ${totals.units}</p>`;
   }
 
   function printOrder() {
-    const { rieles, barras, otros } = buildOrderData();
-    if (!rieles.length && !barras.length && !otros.length) {
+    const data = buildOrderData();
+    if (!data.rieles.length && !data.barras.length && !data.otros.length) {
       alert('No hay productos marcados. Marca al menos un producto antes de imprimir.');
       return;
     }
-    buildPrintView();
+    const totals = countMarked();
+    document.getElementById('print-area').innerHTML = buildPrintHtml(state.header, data, totals);
+    window.print();
+    saveToHistory(data, totals);
+    performClear();
+    showToast('Pedido guardado en el historial. Se vaciaron las marcas para el próximo pedido.');
+  }
+
+  function printHistoryEntry(entry) {
+    document.getElementById('print-area').innerHTML = buildPrintHtml(entry.header, entry.data, entry.totals);
     window.print();
   }
 
-  // ---------- Vaciar ----------
+  // ---------- Historial de pedidos ----------
 
-  function clearAll() {
-    if (!confirm('¿Vaciar todo lo marcado y los productos adicionales? Los datos de solicitante se mantienen.')) return;
+  function saveToHistory(data, totals) {
+    if (totals.lines === 0) return;
+    history.unshift({
+      id: 'h' + Date.now(),
+      createdAt: new Date().toISOString(),
+      header: { ...state.header },
+      data,
+      totals,
+    });
+    saveHistory();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const container = document.getElementById('historial-list');
+    container.innerHTML = '';
+    if (history.length === 0) {
+      container.innerHTML = '<p class="empty-hint">Todavía no has generado ningún pedido. Al tocar "Generar PDF" o "Imprimir" quedará guardado aquí.</p>';
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    history.forEach((entry, i) => {
+      const wrap = document.createElement('section');
+      wrap.className = 'cat-section history-card';
+      if (openHistory.has(entry.id)) wrap.classList.add('open');
+
+      const header = document.createElement('button');
+      header.type = 'button';
+      header.className = 'cat-header history-header';
+      header.innerHTML =
+        `<span class="chevron">›</span>` +
+        `<span class="history-info">` +
+        `<span class="history-date">${escapeHtml(formatFechaLarga(entry.header.fecha))}</span>` +
+        `<span class="history-meta">${escapeHtml(entry.header.solicitante || 'Sin nombre')} · ${entry.totals.lines} líneas · ${entry.totals.units} uds.</span>` +
+        `</span>`;
+      header.addEventListener('click', () => {
+        const nowOpen = wrap.classList.toggle('open');
+        if (nowOpen) openHistory.add(entry.id); else openHistory.delete(entry.id);
+      });
+
+      const body = document.createElement('div');
+      body.className = 'cat-body history-body';
+
+      const table = (title, headers, rows) => {
+        if (!rows.length) return '';
+        return `<h3>${escapeHtml(title)}</h3><div class="history-table-wrap"><table><thead><tr>${headers.map((x) => `<th>${x}</th>`).join('')}</tr></thead>` +
+          `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      };
+      body.innerHTML =
+        (entry.header.observaciones ? `<p class="history-obs"><strong>Observaciones:</strong> ${escapeHtml(entry.header.observaciones)}</p>` : '') +
+        table('Guías y Rieles', ['Categoría', 'Producto', 'Color', 'Cant.'], entry.data.rieles) +
+        table('Barras', ['Categoría', 'Producto', 'Color', 'D20', 'D28'], entry.data.barras) +
+        table('Otros', ['Categoría', 'Producto', 'Color', 'Cant.'], entry.data.otros);
+
+      const actions = document.createElement('div');
+      actions.className = 'history-actions';
+      actions.innerHTML =
+        `<button type="button" class="btn btn-secondary history-pdf">Descargar PDF</button>` +
+        `<button type="button" class="btn btn-secondary history-print">Imprimir</button>` +
+        `<button type="button" class="btn btn-ghost history-delete">Eliminar</button>`;
+      actions.querySelector('.history-pdf').addEventListener('click', () => {
+        const doc = renderPdfDoc(entry.header, entry.data, entry.totals);
+        doc.save(`Pedido_Material_${entry.header.fecha || i}.pdf`);
+      });
+      actions.querySelector('.history-print').addEventListener('click', () => printHistoryEntry(entry));
+      actions.querySelector('.history-delete').addEventListener('click', () => {
+        if (!confirm('¿Eliminar este pedido del historial? No se puede deshacer.')) return;
+        history = history.filter((h) => h.id !== entry.id);
+        saveHistory();
+        renderHistory();
+        updateSummary();
+      });
+      body.appendChild(actions);
+
+      wrap.appendChild(header);
+      wrap.appendChild(body);
+      frag.appendChild(wrap);
+    });
+    container.appendChild(frag);
+  }
+
+  function initHistoryClear() {
+    document.getElementById('btn-clear-historial').addEventListener('click', () => {
+      if (history.length === 0) return;
+      if (!confirm('¿Vaciar todo el historial de pedidos? No se puede deshacer.')) return;
+      history = [];
+      saveHistory();
+      renderHistory();
+      updateSummary();
+    });
+  }
+
+  // ---------- Vaciar marcas ----------
+
+  function performClear() {
     state.checked = {};
     state.qty = {};
     state.qtyDiam = {};
     state.otros = [];
+    state.header.observaciones = '';
+    state.header.fecha = todayISO();
     saveState();
     openSections.rieles.clear();
     openSections.barras.clear();
     renderSections(SECTIONS_RIELES, 'panel-rieles-list', 'rieles');
     renderSections(SECTIONS_BARRAS, 'panel-barras-list', 'barras');
     renderOtros();
+    refreshHeaderForm();
     updateSummary();
     applyFilters();
+  }
+
+  function clearAll() {
+    if (!confirm('¿Vaciar todo lo marcado y los productos adicionales? Los datos de solicitante se mantienen.')) return;
+    performClear();
   }
 
   // ---------- Init ----------
@@ -541,10 +707,12 @@
     initHeaderForm();
     initTabs();
     initOtroForm();
+    initHistoryClear();
 
     renderSections(SECTIONS_RIELES, 'panel-rieles-list', 'rieles');
     renderSections(SECTIONS_BARRAS, 'panel-barras-list', 'barras');
     renderOtros();
+    renderHistory();
     updateSummary();
     applyFilters();
 
