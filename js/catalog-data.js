@@ -3,14 +3,16 @@
    Cada item: { grupo, cat, prod, color, nota }. */
 
 function barraGuia(color, conEmpalme) {
+  // Los accesorios de Barra Guía son todos de diámetro D28.
+  const accColor = `${color} (D28)`;
   const items = [
     { grupo: 'Barra Guía', cat: 'Barra Guía', prod: 'Barra Guía', color },
-    { grupo: 'Barra Guía', cat: '-Accesorio', prod: 'Soporte Techo', color },
-    { grupo: 'Barra Guía', cat: '-Accesorio', prod: 'Soporte Frente', color },
-    { grupo: 'Barra Guía', cat: '-Accesorio', prod: 'Soporte Frente Doble', color },
-    { grupo: 'Barra Guía', cat: '-Accesorio', prod: 'Tapones', color },
+    { grupo: 'Barra Guía', cat: '-Accesorio', prod: 'Soporte Techo', color: accColor },
+    { grupo: 'Barra Guía', cat: '-Accesorio', prod: 'Soporte Frente', color: accColor },
+    { grupo: 'Barra Guía', cat: '-Accesorio', prod: 'Soporte Frente Doble', color: accColor },
+    { grupo: 'Barra Guía', cat: '-Accesorio', prod: 'Tapones', color: accColor },
   ];
-  if (conEmpalme) items.push({ grupo: 'Barra Guía', cat: '-Accesorio', prod: 'Empalme Metálico', color: '' });
+  if (conEmpalme) items.push({ grupo: 'Barra Guía', cat: '-Accesorio', prod: 'Empalme Metálico', color: '(D28)' });
   return items;
 }
 
@@ -73,6 +75,15 @@ const CATALOG_RIELES = [
   { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Soporte Techo Metálico', color: 'Blanco' },
   { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Empalme Metálico', color: '' },
 
+  // Correderas (antes en Guía de Velcro / Guía Curvable)
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Corredera Normal', color: 'Negro' },
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Corredera Normal', color: 'Blanco' },
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Corredera Onda Perfecta 6cm', color: 'Negro' },
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Corredera Onda Perfecta 8cm', color: 'Negro' },
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Corredera Onda Perfecta 6cm', color: 'Blanco' },
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Corredera Onda Perfecta 8cm', color: 'Blanco' },
+  { grupo: 'Guía Manual', cat: '-Accesorio', prod: 'Correderas', color: 'Blanco' },
+
   // Guía Profesional Acero / Blanco
   { grupo: 'Guía Profesional', cat: 'Guía Profesional', prod: 'Guía Profesional', color: 'Acero' },
   { grupo: 'Guía Profesional', cat: '-Accesorio', prod: 'Soporte Techo', color: 'Acero' },
@@ -89,12 +100,6 @@ const CATALOG_RIELES = [
   // Guía de Velcro Blanco
   { grupo: 'Guía de Velcro', cat: 'Guía de Velcro', prod: 'Guía de Velcro', color: 'Blanco' },
   { grupo: 'Guía de Velcro', cat: '-Accesorio', prod: 'Soporte techo', color: 'Blanco' },
-  { grupo: 'Guía de Velcro', cat: '-Accesorio', prod: 'Corredera Normal', color: 'Negro' },
-  { grupo: 'Guía de Velcro', cat: '-Accesorio', prod: 'Corredera Normal', color: 'Blanco' },
-  { grupo: 'Guía de Velcro', cat: '-Accesorio', prod: 'Corredera Onda Perfecta 6cm', color: 'Negro' },
-  { grupo: 'Guía de Velcro', cat: '-Accesorio', prod: 'Corredera Onda Perfecta 8cm', color: 'Negro' },
-  { grupo: 'Guía de Velcro', cat: '-Accesorio', prod: 'Corredera Onda Perfecta 6cm', color: 'Blanco' },
-  { grupo: 'Guía de Velcro', cat: '-Accesorio', prod: 'Corredera Onda Perfecta 8cm', color: 'Blanco' },
   { grupo: 'Guía de Velcro', cat: '-Accesorio', prod: 'Tirador metálico', color: 'Blanco' },
   { grupo: 'Guía de Velcro', cat: '-Accesorio', prod: 'Tirador metálico', color: 'Gris' },
   { grupo: 'Guía de Velcro', cat: '-Accesorio', prod: 'Soporte rápido', color: 'Blanco' },
@@ -119,7 +124,6 @@ const CATALOG_RIELES = [
 
   // Guía Curvable Blanco
   { grupo: 'Guía Curvable', cat: 'Guía Curvable', prod: 'Guía', color: 'Blanco' },
-  { grupo: 'Guía Curvable', cat: '-Accesorio', prod: 'Correderas', color: 'Blanco' },
   { grupo: 'Guía Curvable', cat: '-Accesorio', prod: 'Soporte', color: 'Blanco' },
   { grupo: 'Guía Curvable', cat: '-Accesorio', prod: 'Terminal Metálico', color: 'Blanco' },
   { grupo: 'Guía Curvable', cat: '-Accesorio', prod: 'Empalme', color: 'Blanco' },
