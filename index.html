@@ -93,7 +93,13 @@
   </section>
 
   <section id="panel-catalogo" class="tab-panel">
-    <p class="historial-hint">Agrega, edita o elimina productos del catálogo. Los cambios quedan guardados en este teléfono.</p>
+    <p class="historial-hint">Agrega, edita o elimina productos del catálogo. Los cambios quedan guardados solo en este teléfono.</p>
+    <div class="catalogo-sync">
+      <button type="button" id="btn-exportar-catalogo" class="btn btn-secondary">Exportar catálogo</button>
+      <button type="button" id="btn-importar-catalogo" class="btn btn-secondary">Importar catálogo</button>
+      <input type="file" id="input-importar-catalogo" accept="application/json" hidden>
+    </div>
+    <p class="historial-hint">Para que fabricante, referencia y productos nuevos se vean en <strong>otros teléfonos</strong>: edítalos aquí, toca "Exportar catálogo" y comparte ese archivo (WhatsApp, correo...); en cada otro teléfono, abre esta pestaña y toca "Importar catálogo" con ese archivo.</p>
     <div class="catalogo-toolbar">
       <div class="catalogo-switch">
         <button type="button" class="catalogo-switch-btn active" data-cat="rieles">Guías</button>

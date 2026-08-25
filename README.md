@@ -30,10 +30,31 @@ reemplazo de la planilla en papel.
    cualquier pedido anterior, eliminarlo, o vaciar todo el historial.
 8. **Vaciar** borra lo marcado sin generar nada (los datos de solicitante se
    mantienen) por si necesitas empezar de cero.
+9. Desde la pestaña **Catálogo** se puede agregar, editar o eliminar
+   cualquier producto (incluido su **Fabricante** y **Ref. fabricante**,
+   que salen como columnas a la derecha en el PDF) sin tocar código.
 
 Los datos se guardan automáticamente en el propio teléfono/navegador
 (`localStorage`), así que puedes cerrar la app y seguir completando el
 inventario más tarde sin perder lo ya marcado.
+
+### Un catálogo por dispositivo (y cómo compartirlo)
+
+Los cambios hechos en la pestaña **Catálogo** (productos agregados, editados,
+eliminados, fabricante/referencia) se guardan solo en el teléfono donde se
+hicieron — no hay una base de datos compartida detrás de la app. Para que se
+vean en otros teléfonos:
+
+1. En el teléfono donde hiciste los cambios, ve a **Catálogo** y toca
+   **"Exportar catálogo"**: descarga un archivo `.json`.
+2. Comparte ese archivo (WhatsApp, correo, AirDrop...) a los demás teléfonos.
+3. En cada uno, ve a **Catálogo** → **"Importar catálogo"** y elige el
+   archivo recibido. Esto reemplaza el catálogo manual de ese teléfono por
+   el importado (no los mezcla), así que conviene hacerlo desde una única
+   fuente "oficial" cada vez que se actualice.
+
+El pedido en curso, el historial de pedidos y los datos de "Otros" no se
+exportan — son propios de cada teléfono.
 
 ## Publicar la app
 

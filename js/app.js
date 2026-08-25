@@ -554,6 +554,60 @@
     });
   }
 
+  // ---------- Exportar / importar catálogo (compartir entre teléfonos) ----------
+  //
+  // Los cambios del catálogo se guardan solo en este dispositivo (localStorage).
+  // Para que se vean en otros teléfonos hay que pasarles un archivo con estos
+  // cambios: no hay servidor compartido, así que la sincronización es manual.
+
+  function initCatalogSync() {
+    document.getElementById('btn-exportar-catalogo').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(catalogEdits, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `catalogo-inventario-${todayISO()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast('Catálogo exportado. Comparte el archivo para importarlo en otros teléfonos.');
+    });
+
+    const fileInput = document.getElementById('input-importar-catalogo');
+    document.getElementById('btn-importar-catalogo').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        let parsed;
+        try {
+          parsed = JSON.parse(reader.result);
+          if (!parsed || typeof parsed !== 'object') throw new Error('formato inválido');
+        } catch (e) {
+          alert('Ese archivo no es un catálogo exportado válido.');
+          fileInput.value = '';
+          return;
+        }
+        if (!confirm('¿Reemplazar el catálogo de este teléfono con el del archivo importado? Se perderán los cambios manuales que no estén en ese archivo. No se puede deshacer.')) {
+          fileInput.value = '';
+          return;
+        }
+        catalogEdits = {
+          edits: parsed.edits && typeof parsed.edits === 'object' ? parsed.edits : {},
+          deleted: parsed.deleted && typeof parsed.deleted === 'object' ? parsed.deleted : {},
+          custom: Array.isArray(parsed.custom) ? parsed.custom : [],
+        };
+        saveCatalogEdits();
+        refreshEverything();
+        showToast('Catálogo importado correctamente.');
+        fileInput.value = '';
+      };
+      reader.readAsText(file);
+    });
+  }
+
   // ---------- Resumen / filtros ----------
 
   function countMarked() {
@@ -966,6 +1020,7 @@
     initOtroForm();
     initHistoryClear();
     initCatalogoTab();
+    initCatalogSync();
 
     renderSections(EFFECTIVE.sectionsRieles, 'panel-rieles-list', 'rieles');
     renderSections(EFFECTIVE.sectionsBarras, 'panel-barras-list', 'barras');
