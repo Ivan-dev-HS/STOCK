@@ -205,7 +205,7 @@
     const label = document.createElement('label');
     label.className = 'item-row';
     label.dataset.id = item.id;
-    label.dataset.search = norm([item.cat, item.prod, item.color, item.nota].join(' '));
+    label.dataset.search = norm([item.cat, item.prod, item.color, item.nota, item.fabricante, item.refFabricante].join(' '));
 
     const isChecked = !!state.checked[item.id];
     if (isChecked) label.classList.add('is-checked');
@@ -221,10 +221,12 @@
 
     const info = document.createElement('div');
     info.className = 'item-info';
+    const fabricanteTxt = [item.fabricante, item.refFabricante].filter(Boolean).join(' · ');
     info.innerHTML =
       `<span class="item-name">${escapeHtml(item.prod)}</span>` +
       (item.color ? `<span class="item-color">${escapeHtml(item.color)}</span>` : '') +
-      (item.nota ? `<span class="item-nota">${escapeHtml(item.nota)}</span>` : '');
+      (item.nota ? `<span class="item-nota">${escapeHtml(item.nota)}</span>` : '') +
+      (fabricanteTxt ? `<span class="item-fab">${escapeHtml(fabricanteTxt)}</span>` : '');
 
     chk.addEventListener('change', () => {
       state.checked[item.id] = chk.checked || undefined;
@@ -532,6 +534,14 @@
       if (!grupo || !prod) {
         alert('Indica al menos el grupo/sección y el producto.');
         return;
+      }
+      const list = catalogoView === 'rieles' ? EFFECTIVE.rieles : EFFECTIVE.barras;
+      const yaExiste = list.some((it) => norm(it.prod) === norm(prod) && norm(it.color || '') === norm(color));
+      if (yaExiste) {
+        const seguir = confirm(
+          `Ya existe "${prod}${color ? ' - ' + color : ''}" en el catálogo. Si querías agregarle fabricante o cambiar algo, cancela y usa el lápiz ✎ para editarlo en vez de crear uno duplicado.\n\n¿Agregarlo de todas formas como un producto nuevo?`
+        );
+        if (!seguir) return;
       }
       catalogEdits.custom.push({ id: newCustomId(), catalogo: catalogoView, grupo, cat: '-Accesorio', prod, color, fabricante, refFabricante });
       saveCatalogEdits();
