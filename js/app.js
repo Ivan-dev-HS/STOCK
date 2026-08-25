@@ -125,7 +125,7 @@
     });
     catalogEdits.custom
       .filter((c) => c.catalogo === catalogo && !catalogEdits.deleted[c.id])
-      .forEach((c) => out.push({ id: c.id, grupo: c.grupo, cat: c.cat || '-Accesorio', prod: c.prod, color: c.color || '', custom: true }));
+      .forEach((c) => out.push({ id: c.id, grupo: c.grupo, cat: c.cat || '-Accesorio', prod: c.prod, color: c.color || '', fabricante: c.fabricante || '', refFabricante: c.refFabricante || '', custom: true }));
     return out;
   }
 
@@ -308,6 +308,7 @@
         `<span class="item-name">${escapeHtml(o.prod)}</span>` +
         (o.color ? `<span class="item-color">${escapeHtml(o.color)}</span>` : '') +
         (o.cat ? `<span class="item-nota">${escapeHtml(o.cat)}</span>` : '') +
+        (o.fabricante || o.refFabricante ? `<span class="item-nota">${escapeHtml([o.fabricante, o.refFabricante].filter(Boolean).join(' · '))}</span>` : '') +
         `</div>` +
         `<button type="button" class="btn-icon btn-remove" aria-label="Eliminar">✕</button>`;
       row.querySelector('.btn-remove').addEventListener('click', () => {
@@ -327,11 +328,13 @@
       const cat = document.getElementById('otro-cat').value.trim();
       const prod = document.getElementById('otro-prod').value.trim();
       const color = document.getElementById('otro-color').value.trim();
+      const fabricante = document.getElementById('otro-fabricante').value.trim();
+      const refFabricante = document.getElementById('otro-ref').value.trim();
       if (!prod) {
         alert('Indica al menos el nombre del producto.');
         return;
       }
-      state.otros.push({ id: 'o' + Date.now(), cat, prod, color });
+      state.otros.push({ id: 'o' + Date.now(), cat, prod, color, fabricante, refFabricante });
       saveState();
       form.reset();
       renderOtros();
@@ -370,7 +373,8 @@
     info.className = 'item-info';
     info.innerHTML =
       `<span class="item-name">${escapeHtml(item.prod)}</span>` +
-      (item.color ? `<span class="item-color">${escapeHtml(item.color)}</span>` : '');
+      (item.color ? `<span class="item-color">${escapeHtml(item.color)}</span>` : '') +
+      (item.fabricante || item.refFabricante ? `<span class="item-nota">${escapeHtml([item.fabricante, item.refFabricante].filter(Boolean).join(' · '))}</span>` : '');
 
     const actions = document.createElement('div');
     actions.className = 'catalogo-row-actions';
@@ -395,9 +399,11 @@
     const grupoInput = inputEl(item.grupo, 'Grupo / sección');
     const prodInput = inputEl(item.prod, 'Producto');
     const colorInput = inputEl(item.color, 'Color (opcional)');
+    const fabricanteInput = inputEl(item.fabricante, 'Fabricante (opcional)');
+    const refInput = inputEl(item.refFabricante, 'Ref. fabricante (opcional)');
     const fields = document.createElement('div');
     fields.className = 'catalogo-edit-fields';
-    fields.append(grupoInput, prodInput, colorInput);
+    fields.append(grupoInput, prodInput, colorInput, fabricanteInput, refInput);
 
     const actions = document.createElement('div');
     actions.className = 'catalogo-row-actions';
@@ -408,11 +414,13 @@
       const grupo = grupoInput.value.trim();
       const prod = prodInput.value.trim();
       const color = colorInput.value.trim();
+      const fabricante = fabricanteInput.value.trim();
+      const refFabricante = refInput.value.trim();
       if (!grupo || !prod) {
         alert('El grupo y el producto son obligatorios.');
         return;
       }
-      saveCatalogEdit(item, { grupo, prod, color });
+      saveCatalogEdit(item, { grupo, prod, color, fabricante, refFabricante });
     });
     actions.querySelector('.btn-cancel').addEventListener('click', () => renderCatalogoRowView(row, item));
 
@@ -519,11 +527,13 @@
       const grupo = document.getElementById('prod-grupo').value.trim();
       const prod = document.getElementById('prod-nombre').value.trim();
       const color = document.getElementById('prod-color').value.trim();
+      const fabricante = document.getElementById('prod-fabricante').value.trim();
+      const refFabricante = document.getElementById('prod-ref').value.trim();
       if (!grupo || !prod) {
         alert('Indica al menos el grupo/sección y el producto.');
         return;
       }
-      catalogEdits.custom.push({ id: newCustomId(), catalogo: catalogoView, grupo, cat: '-Accesorio', prod, color });
+      catalogEdits.custom.push({ id: newCustomId(), catalogo: catalogoView, grupo, cat: '-Accesorio', prod, color, fabricante, refFabricante });
       saveCatalogEdits();
       openCatalogoSections[catalogoView].add(grupo);
       refreshEverything();
@@ -666,7 +676,7 @@
         byTitle.set(it.grupo, g);
         groups.push(g);
       }
-      g.rows.push([it.prod, it.color || '']);
+      g.rows.push([it.prod, it.color || '', it.fabricante || '', it.refFabricante || '']);
     });
     return groups;
   }
@@ -674,7 +684,7 @@
   function buildOrderData() {
     const rielesGroups = groupByGrupo(EFFECTIVE.rieles);
     const barrasGroups = groupByGrupo(EFFECTIVE.barras);
-    const otros = state.otros.map((o) => [o.cat || '', o.prod, o.color || '']);
+    const otros = state.otros.map((o) => [o.cat || '', o.prod, o.color || '', o.fabricante || '', o.refFabricante || '']);
     return { rielesGroups, barrasGroups, otros };
   }
 
@@ -714,7 +724,7 @@
     function groupedBody(groups) {
       const rows = [];
       groups.forEach((g) => {
-        rows.push([{ content: g.title, colSpan: 2, styles: { fontStyle: 'bold', fillColor: [225, 232, 242], textColor: [27, 47, 75] } }]);
+        rows.push([{ content: g.title, colSpan: 4, styles: { fontStyle: 'bold', fillColor: [225, 232, 242], textColor: [27, 47, 75] } }]);
         g.rows.forEach((r) => rows.push(r));
       });
       return rows;
@@ -729,11 +739,12 @@
       doc.autoTable({
         startY: y + 6,
         margin: { left: marginX, right: marginX },
-        head: [['Producto', 'Color']],
+        head: [['Producto', 'Color', 'Fabricante', 'Ref. fabricante']],
         body: groupedBody(groups),
         theme: 'grid',
         styles: { fontSize: 9, cellPadding: 4 },
         headStyles: { fillColor: [37, 61, 90] },
+        columnStyles: { 1: { cellWidth: 90 }, 2: { cellWidth: 90 }, 3: { cellWidth: 90 } },
       });
       y = doc.lastAutoTable.finalY + 26;
     }
@@ -749,11 +760,12 @@
       doc.autoTable({
         startY: y + 6,
         margin: { left: marginX, right: marginX },
-        head: [['Categoría', 'Producto', 'Color']],
+        head: [['Categoría', 'Producto', 'Color', 'Fabricante', 'Ref. fabricante']],
         body: data.otros,
         theme: 'grid',
         styles: { fontSize: 9, cellPadding: 4 },
         headStyles: { fillColor: [37, 61, 90] },
+        columnStyles: { 2: { cellWidth: 70 }, 3: { cellWidth: 70 }, 4: { cellWidth: 70 } },
       });
       y = doc.lastAutoTable.finalY + 26;
     }
@@ -786,16 +798,16 @@
     if (!groups.length) return '';
     let rows = '';
     groups.forEach((g) => {
-      rows += `<tr class="group-row"><td colspan="2">${escapeHtml(g.title)}</td></tr>`;
-      g.rows.forEach((r) => { rows += `<tr><td>${escapeHtml(r[0])}</td><td>${escapeHtml(r[1])}</td></tr>`; });
+      rows += `<tr class="group-row"><td colspan="4">${escapeHtml(g.title)}</td></tr>`;
+      g.rows.forEach((r) => { rows += `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`; });
     });
-    return `<table><thead><tr><th>Producto</th><th>Color</th></tr></thead><tbody>${rows}</tbody></table>`;
+    return `<table><thead><tr><th>Producto</th><th>Color</th><th>Fabricante</th><th>Ref. fabricante</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   function buildPrintHtml(header, data, totals) {
     const otrosTable = () => {
       if (!data.otros.length) return '';
-      return `<h2>Productos adicionales</h2><table><thead><tr><th>Categoría</th><th>Producto</th><th>Color</th></tr></thead>` +
+      return `<h2>Productos adicionales</h2><table><thead><tr><th>Categoría</th><th>Producto</th><th>Color</th><th>Fabricante</th><th>Ref. fabricante</th></tr></thead>` +
         `<tbody>${data.otros.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     };
     return `<h1>Pedido de Material</h1>` +
@@ -874,7 +886,7 @@
 
       const otrosTable = () => {
         if (!entry.data.otros.length) return '';
-        return `<h3>Otros</h3><div class="history-table-wrap"><table><thead><tr><th>Categoría</th><th>Producto</th><th>Color</th></tr></thead>` +
+        return `<h3>Otros</h3><div class="history-table-wrap"><table><thead><tr><th>Categoría</th><th>Producto</th><th>Color</th><th>Fabricante</th><th>Ref. fabricante</th></tr></thead>` +
           `<tbody>${entry.data.otros.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
       };
       body.innerHTML =
