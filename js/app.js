@@ -1,188 +1,51 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'inventarioPedidoV4';
-  const HISTORY_KEY = 'inventarioHistorialV2';
-  const CATALOG_EDITS_KEY = 'inventarioCatalogoEditsV1';
-  const HISTORY_MAX = 50;
-  const todayISO = () => new Date().toISOString().slice(0, 10);
+  // ---------- Urgencia ----------
 
-  const defaultState = () => ({
-    header: { solicitante: '', fecha: todayISO(), observaciones: '' },
-    checked: {}, // { itemId: true } -> marcado "hay que pedir"
-    otros: [],   // [{ id, cat, prod, color }]
-  });
+  const URGENCIAS = [
+    { value: 'no_hay', label: 'No hay', rank: 3 },
+    { value: 'poco', label: 'Queda poco', rank: 2 },
+    { value: 'por_si_acaso', label: 'Aún queda', rank: 1 },
+  ];
+  const URGENCIA_LABEL = Object.fromEntries(URGENCIAS.map((u) => [u.value, u.label]));
+  const URGENCIA_RANK = Object.fromEntries(URGENCIAS.map((u) => [u.value, u.rank]));
 
-  let state = loadState();
-  let history = loadHistory();
-  let catalogEdits = loadCatalogEdits();
+  // ---------- Empleado (persistido en este teléfono) ----------
+
+  const EMPLOYEE_KEY = 'inventarioEmpleadoNombre';
+  let employeeName = (localStorage.getItem(EMPLOYEE_KEY) || '').trim();
+
+  function setEmployeeName(name) {
+    employeeName = name.trim();
+    localStorage.setItem(EMPLOYEE_KEY, employeeName);
+    document.getElementById('employee-name-label').textContent = employeeName;
+  }
+
+  // ---------- Estado en memoria ----------
+
+  let catalogEdits = { edits: {}, deleted: {}, custom: [] };
+  const EFFECTIVE = { rieles: [], barras: [], sectionsRieles: [], sectionsBarras: [] };
+  let myRequests = new Map(); // product_id -> { id, urgencia }
+  let myOtros = [];           // filas activas de "otros" del empleado actual
+
   let onlyMarked = false;
   let activeTab = 'rieles';
   let catalogoView = 'rieles';
   const openSections = { rieles: new Set(), barras: new Set() };
   const openCatalogoSections = { rieles: new Set(), barras: new Set() };
-  const openHistory = new Set();
-  const EFFECTIVE = { rieles: [], barras: [], sectionsRieles: [], sectionsBarras: [] };
 
-  function loadState() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return migrateOldState();
-      const parsed = JSON.parse(raw);
-      const base = defaultState();
-      return {
-        header: { ...base.header, ...(parsed.header || {}) },
-        checked: parsed.checked || {},
-        otros: Array.isArray(parsed.otros) ? parsed.otros : [],
-      };
-    } catch (e) {
-      return defaultState();
-    }
-  }
-
-  // Compatibilidad con versiones anteriores: los ids de producto cambiaron
-  // de formato y ya no hay cantidades, así que las marcas viejas no se
-  // pueden migrar, pero sí los datos del pedido (fecha, solicitante,
-  // observaciones) y los nombres de los productos "Otros" ya agregados.
-  function migrateOldState() {
-    const base = defaultState();
-    try {
-      const raw = localStorage.getItem('inventarioPedidoV3')
-        || localStorage.getItem('inventarioPedidoV2')
-        || localStorage.getItem('inventarioPedidoV1');
-      if (!raw) return base;
-      const old = JSON.parse(raw);
-      base.header = { ...base.header, ...(old.header || {}) };
-      base.otros = (Array.isArray(old.otros) ? old.otros : []).map((o) => ({ id: o.id, cat: o.cat, prod: o.prod, color: o.color }));
-    } catch (e) { /* ignora */ }
-    return base;
-  }
-
-  function saveState() {
-    // Guardado inmediato (sin debounce): el JSON es pequeño y así no se
-    // pierde una marca si el usuario cierra la app justo después.
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }
-
-  function loadHistory() {
-    try {
-      const raw = localStorage.getItem(HISTORY_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  function saveHistory() {
-    if (history.length > HISTORY_MAX) history.length = HISTORY_MAX;
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-  }
-
-  // ---------- Edición manual del catálogo ----------
-  //
-  // El catálogo base (js/catalog-data.js) queda tal cual viene de las
-  // planillas originales. Los cambios que el usuario hace desde la pestaña
-  // "Catálogo" (agregar, editar, eliminar) se guardan aparte, como una capa
-  // encima del catálogo base, para poder "Restaurar" en cualquier momento
-  // sin perder la referencia original.
-
-  function defaultCatalogEdits() {
-    return {
-      edits: {},   // { itemId: { grupo, prod, color } } -> reemplaza esos campos en un item base
-      deleted: {}, // { itemId: true } -> oculta un item base
-      custom: [],  // [{ id, catalogo:'rieles'|'barras', grupo, cat, prod, color }] -> items nuevos
-    };
-  }
-
-  function loadCatalogEdits() {
-    try {
-      const raw = localStorage.getItem(CATALOG_EDITS_KEY);
-      const parsed = raw ? JSON.parse(raw) : null;
-      const base = defaultCatalogEdits();
-      if (!parsed) return base;
-      return {
-        edits: parsed.edits || {},
-        deleted: parsed.deleted || {},
-        custom: Array.isArray(parsed.custom) ? parsed.custom : [],
-      };
-    } catch (e) {
-      return defaultCatalogEdits();
-    }
-  }
-
-  function saveCatalogEdits() {
-    localStorage.setItem(CATALOG_EDITS_KEY, JSON.stringify(catalogEdits));
-  }
-
-  function buildEffectiveList(catalogo) {
-    const base = catalogo === 'rieles' ? CATALOG_RIELES : CATALOG_BARRAS;
-    const out = [];
-    base.forEach((it) => {
-      if (catalogEdits.deleted[it.id]) return;
-      const patch = catalogEdits.edits[it.id];
-      out.push(patch ? { ...it, ...patch } : it);
-    });
-    catalogEdits.custom
-      .filter((c) => c.catalogo === catalogo && !catalogEdits.deleted[c.id])
-      .forEach((c) => out.push({ id: c.id, grupo: c.grupo, cat: c.cat || '-Accesorio', prod: c.prod, color: c.color || '', fabricante: c.fabricante || '', refFabricante: c.refFabricante || '', custom: true }));
-    return out;
-  }
-
-  // Agrupa por "grupo" (sin exigir que estén contiguos en el arreglo), para
-  // que un producto agregado a un grupo ya existente se una a esa misma
-  // sección en vez de crear una sección duplicada al final.
-  function buildSectionsFrom(list) {
-    const sections = [];
-    const byTitle = new Map();
-    list.forEach((item) => {
-      let sec = byTitle.get(item.grupo);
-      if (!sec) {
-        sec = { title: item.grupo, items: [] };
-        byTitle.set(item.grupo, sec);
-        sections.push(sec);
-      }
-      sec.items.push(item);
-    });
-    return sections;
-  }
-
-  function rebuildEffectiveCatalog() {
-    EFFECTIVE.rieles = buildEffectiveList('rieles');
-    EFFECTIVE.barras = buildEffectiveList('barras');
-    EFFECTIVE.sectionsRieles = buildSectionsFrom(EFFECTIVE.rieles);
-    EFFECTIVE.sectionsBarras = buildSectionsFrom(EFFECTIVE.barras);
-  }
-
-  function refreshEverything() {
-    rebuildEffectiveCatalog();
-    renderSections(EFFECTIVE.sectionsRieles, 'panel-rieles-list', 'rieles');
-    renderSections(EFFECTIVE.sectionsBarras, 'panel-barras-list', 'barras');
-    renderCatalogo();
-    updateSummary();
-    applyFilters();
-  }
+  let adminReports = [];
+  let adminViewingReportId = 'current';
 
   const ACCENTS = { á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u', ñ: 'n', ü: 'u' };
   function norm(s) {
-    return (s || '')
-      .toString()
-      .toLowerCase()
-      .replace(/[áéíóúñü]/g, (c) => ACCENTS[c] || c);
+    return (s || '').toString().toLowerCase().replace(/[áéíóúñü]/g, (c) => ACCENTS[c] || c);
   }
-
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
-
-  function formatFechaLarga(iso) {
-    if (!iso) return '-';
-    const [y, m, d] = iso.split('-');
-    if (!y || !m || !d) return iso;
-    return `${d}/${m}/${y}`;
-  }
-
-  // ---------- Aviso flotante (toast) ----------
+  function todayISO() { return new Date().toISOString().slice(0, 10); }
 
   let toastTimer = null;
   function showToast(message) {
@@ -199,25 +62,178 @@
     toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
   }
 
+  function showError(message) {
+    console.error(message);
+    showToast(message);
+  }
+
+  // ---------- Empleado: modal de nombre ----------
+
+  function initEmployeeName() {
+    document.getElementById('employee-name-label').textContent = employeeName || '-';
+    if (!employeeName) openEmployeeModal();
+
+    document.getElementById('btn-change-employee').addEventListener('click', openEmployeeModal);
+    document.getElementById('employee-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('employee-name-input');
+      if (!input.value.trim()) return;
+      setEmployeeName(input.value);
+      document.getElementById('employee-modal').hidden = true;
+      loadMyRequests();
+    });
+  }
+
+  function openEmployeeModal() {
+    const input = document.getElementById('employee-name-input');
+    input.value = employeeName;
+    document.getElementById('employee-modal').hidden = false;
+    setTimeout(() => input.focus(), 50);
+  }
+
+  // ---------- Catálogo compartido (Supabase) ----------
+
+  async function loadCatalogFromSupabase() {
+    const [editsRes, deletedRes, customRes] = await Promise.all([
+      sb.from('inv_catalog_edits').select('*'),
+      sb.from('inv_catalog_deleted').select('*'),
+      sb.from('inv_catalog_custom').select('*'),
+    ]);
+    if (editsRes.error || deletedRes.error || customRes.error) {
+      showError('No se pudo cargar el catálogo compartido. Revisa tu conexión.');
+      return;
+    }
+    catalogEdits.edits = {};
+    (editsRes.data || []).forEach((row) => {
+      catalogEdits.edits[row.item_id] = { grupo: row.grupo, prod: row.producto, color: row.color, fabricante: row.fabricante, refFabricante: row.ref_fabricante };
+    });
+    catalogEdits.deleted = {};
+    (deletedRes.data || []).forEach((row) => { catalogEdits.deleted[row.item_id] = true; });
+    catalogEdits.custom = (customRes.data || []).map((row) => ({
+      id: row.id, catalogo: row.catalogo, grupo: row.grupo, cat: row.cat, prod: row.producto,
+      color: row.color, fabricante: row.fabricante, refFabricante: row.ref_fabricante,
+    }));
+    rebuildEffectiveCatalog();
+  }
+
+  function buildEffectiveList(catalogo) {
+    const base = catalogo === 'rieles' ? CATALOG_RIELES : CATALOG_BARRAS;
+    const out = [];
+    base.forEach((it) => {
+      if (catalogEdits.deleted[it.id]) return;
+      const patch = catalogEdits.edits[it.id];
+      out.push(patch ? { ...it, ...patch } : it);
+    });
+    catalogEdits.custom
+      .filter((c) => c.catalogo === catalogo && !catalogEdits.deleted[c.id])
+      .forEach((c) => out.push({ id: c.id, grupo: c.grupo, cat: c.cat || '-Accesorio', prod: c.prod, color: c.color || '', fabricante: c.fabricante || '', refFabricante: c.refFabricante || '', custom: true }));
+    return out;
+  }
+
+  function buildSectionsFrom(list) {
+    const sections = [];
+    const byTitle = new Map();
+    list.forEach((item) => {
+      let sec = byTitle.get(item.grupo);
+      if (!sec) { sec = { title: item.grupo, items: [] }; byTitle.set(item.grupo, sec); sections.push(sec); }
+      sec.items.push(item);
+    });
+    return sections;
+  }
+
+  function rebuildEffectiveCatalog() {
+    EFFECTIVE.rieles = buildEffectiveList('rieles');
+    EFFECTIVE.barras = buildEffectiveList('barras');
+    EFFECTIVE.sectionsRieles = buildSectionsFrom(EFFECTIVE.rieles);
+    EFFECTIVE.sectionsBarras = buildSectionsFrom(EFFECTIVE.barras);
+  }
+
+  function refreshCatalogUI() {
+    renderSections(EFFECTIVE.sectionsRieles, 'panel-rieles-list', 'rieles');
+    renderSections(EFFECTIVE.sectionsBarras, 'panel-barras-list', 'barras');
+    renderCatalogo();
+    updateSummary();
+    applyFilters();
+  }
+
+  // ---------- Mis peticiones activas (semana en curso) ----------
+
+  async function loadMyRequests() {
+    if (!employeeName) return;
+    const { data, error } = await sb
+      .from('inv_requests')
+      .select('*')
+      .eq('empleado', employeeName)
+      .is('report_id', null);
+    if (error) {
+      showError('No se pudieron cargar tus marcas. Revisa tu conexión.');
+      return;
+    }
+    myRequests = new Map();
+    myOtros = [];
+    (data || []).forEach((row) => {
+      if (row.catalogo === 'otros') {
+        myOtros.push(row);
+      } else {
+        myRequests.set(row.product_id, { id: row.id, urgencia: row.urgencia });
+      }
+    });
+    refreshCatalogUI();
+    renderOtros();
+  }
+
+  async function setUrgencia(item, catalogo, value) {
+    const current = myRequests.get(item.id);
+    try {
+      if (current && current.urgencia === value) {
+        const { error } = await sb.from('inv_requests').delete().eq('id', current.id);
+        if (error) throw error;
+        myRequests.delete(item.id);
+      } else if (current) {
+        const { error } = await sb.from('inv_requests').update({ urgencia: value }).eq('id', current.id);
+        if (error) throw error;
+        myRequests.set(item.id, { id: current.id, urgencia: value });
+      } else {
+        const row = {
+          catalogo, product_id: item.id, grupo: item.grupo, producto: item.prod,
+          color: item.color || null, fabricante: item.fabricante || null, ref_fabricante: item.refFabricante || null,
+          urgencia: value, empleado: employeeName,
+        };
+        const { data, error } = await sb.from('inv_requests').insert(row).select().single();
+        if (error) throw error;
+        myRequests.set(item.id, { id: data.id, urgencia: value });
+      }
+    } catch (e) {
+      showError('No se pudo guardar. Revisa tu conexión a internet.');
+    }
+    updateSummary();
+  }
+
   // ---------- Render de catálogos (secciones plegables) ----------
 
-  function buildItemRow(item) {
-    const label = document.createElement('label');
-    label.className = 'item-row';
-    label.dataset.id = item.id;
-    label.dataset.search = norm([item.cat, item.prod, item.color, item.nota, item.fabricante, item.refFabricante].join(' '));
+  function urgencyPicker(activeValue, onPick) {
+    const wrap = document.createElement('div');
+    wrap.className = 'urgencia-picker';
+    URGENCIAS.forEach((u) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `urg-btn urg-${u.value}` + (activeValue === u.value ? ' active' : '');
+      btn.textContent = u.label;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onPick(u.value, btn, wrap);
+      });
+      wrap.appendChild(btn);
+    });
+    return wrap;
+  }
 
-    const isChecked = !!state.checked[item.id];
-    if (isChecked) label.classList.add('is-checked');
-
-    const chk = document.createElement('input');
-    chk.type = 'checkbox';
-    chk.className = 'chk';
-    chk.checked = isChecked;
-
-    const box = document.createElement('span');
-    box.className = 'check-box';
-    box.setAttribute('aria-hidden', 'true');
+  function buildItemRow(item, catalogo) {
+    const row = document.createElement('div');
+    const current = myRequests.get(item.id);
+    row.className = 'item-row cat-row' + (current ? ' is-checked' : '');
+    row.dataset.id = item.id;
+    row.dataset.search = norm([item.cat, item.prod, item.color, item.fabricante, item.refFabricante].join(' '));
 
     const info = document.createElement('div');
     info.className = 'item-info';
@@ -225,27 +241,23 @@
     info.innerHTML =
       `<span class="item-name">${escapeHtml(item.prod)}</span>` +
       (item.color ? `<span class="item-color">${escapeHtml(item.color)}</span>` : '') +
-      (item.nota ? `<span class="item-nota">${escapeHtml(item.nota)}</span>` : '') +
       (fabricanteTxt ? `<span class="item-fab">${escapeHtml(fabricanteTxt)}</span>` : '');
 
-    chk.addEventListener('change', () => {
-      state.checked[item.id] = chk.checked || undefined;
-      if (!chk.checked) delete state.checked[item.id];
-      label.classList.toggle('is-checked', chk.checked);
-      saveState();
-      updateSummary();
-      applyFilters();
+    const picker = urgencyPicker(current?.urgencia, async (value, btn, wrap) => {
+      await setUrgencia(item, catalogo, value);
+      const nowActive = myRequests.has(item.id);
+      row.classList.toggle('is-checked', nowActive);
+      wrap.querySelectorAll('.urg-btn').forEach((b) => b.classList.toggle('active', b === btn && nowActive));
     });
 
-    label.appendChild(chk);
-    label.appendChild(box);
-    label.appendChild(info);
-    return label;
+    row.appendChild(info);
+    row.appendChild(picker);
+    return row;
   }
 
   function sectionCounts(section) {
     const total = section.items.length;
-    const done = section.items.filter((it) => state.checked[it.id]).length;
+    const done = section.items.filter((it) => myRequests.has(it.id)).length;
     return { total, done };
   }
 
@@ -255,8 +267,7 @@
     wrap.dataset.title = section.title;
 
     const { total, done } = sectionCounts(section);
-    const isOpen = openSections[tabKey].has(section.title);
-    if (isOpen) wrap.classList.add('open');
+    if (openSections[tabKey].has(section.title)) wrap.classList.add('open');
 
     const header = document.createElement('button');
     header.type = 'button';
@@ -267,13 +278,12 @@
       `<span class="cat-count${done ? ' has-marked' : ''}">${done}/${total}</span>`;
     header.addEventListener('click', () => {
       const nowOpen = wrap.classList.toggle('open');
-      if (nowOpen) openSections[tabKey].add(section.title);
-      else openSections[tabKey].delete(section.title);
+      if (nowOpen) openSections[tabKey].add(section.title); else openSections[tabKey].delete(section.title);
     });
 
     const body = document.createElement('div');
     body.className = 'cat-body';
-    section.items.forEach((item) => body.appendChild(buildItemRow(item)));
+    section.items.forEach((item) => body.appendChild(buildItemRow(item, tabKey)));
 
     wrap.appendChild(header);
     wrap.appendChild(body);
@@ -292,32 +302,39 @@
     container.appendChild(frag);
   }
 
-  // ---------- Productos adicionales (fuera de catálogo) ----------
+  // ---------- Otros (fuera de catálogo) ----------
 
   function renderOtros() {
     const container = document.getElementById('otros-list');
     container.innerHTML = '';
-    if (state.otros.length === 0) {
+    if (myOtros.length === 0) {
       container.innerHTML = '<p class="empty-hint">No has agregado productos adicionales.</p>';
       return;
     }
-    state.otros.forEach((o) => {
+    myOtros.forEach((o) => {
       const row = document.createElement('div');
       row.className = 'item-row is-checked otro-row';
+      const fab = [o.fabricante, o.ref_fabricante].filter(Boolean).join(' · ');
       row.innerHTML =
-        `<span class="check-box static" aria-hidden="true"></span>` +
+        `<span class="check-box static urg-dot-${o.urgencia}" aria-hidden="true"></span>` +
         `<div class="item-info">` +
-        `<span class="item-name">${escapeHtml(o.prod)}</span>` +
+        `<span class="item-name">${escapeHtml(o.producto)}</span>` +
         (o.color ? `<span class="item-color">${escapeHtml(o.color)}</span>` : '') +
-        (o.cat ? `<span class="item-nota">${escapeHtml(o.cat)}</span>` : '') +
-        (o.fabricante || o.refFabricante ? `<span class="item-nota">${escapeHtml([o.fabricante, o.refFabricante].filter(Boolean).join(' · '))}</span>` : '') +
+        (o.categoria ? `<span class="item-nota">${escapeHtml(o.categoria)}</span>` : '') +
+        (fab ? `<span class="item-fab">${escapeHtml(fab)}</span>` : '') +
+        `<span class="item-nota">${escapeHtml(URGENCIA_LABEL[o.urgencia] || '')}</span>` +
         `</div>` +
         `<button type="button" class="btn-icon btn-remove" aria-label="Eliminar">✕</button>`;
-      row.querySelector('.btn-remove').addEventListener('click', () => {
-        state.otros = state.otros.filter((x) => x.id !== o.id);
-        saveState();
-        renderOtros();
-        updateSummary();
+      row.querySelector('.btn-remove').addEventListener('click', async () => {
+        try {
+          const { error } = await sb.from('inv_requests').delete().eq('id', o.id);
+          if (error) throw error;
+          myOtros = myOtros.filter((x) => x.id !== o.id);
+          renderOtros();
+          updateSummary();
+        } catch (e) {
+          showError('No se pudo eliminar. Revisa tu conexión.');
+        }
       });
       container.appendChild(row);
     });
@@ -325,22 +342,39 @@
 
   function initOtroForm() {
     const form = document.getElementById('otro-form');
-    form.addEventListener('submit', (e) => {
+    let selectedUrgencia = null;
+    document.querySelectorAll('#otro-urgencia .urg-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        selectedUrgencia = btn.dataset.urg;
+        document.querySelectorAll('#otro-urgencia .urg-btn').forEach((b) => b.classList.toggle('active', b === btn));
+      });
+    });
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const cat = document.getElementById('otro-cat').value.trim();
       const prod = document.getElementById('otro-prod').value.trim();
       const color = document.getElementById('otro-color').value.trim();
       const fabricante = document.getElementById('otro-fabricante').value.trim();
       const refFabricante = document.getElementById('otro-ref').value.trim();
-      if (!prod) {
-        alert('Indica al menos el nombre del producto.');
-        return;
+      if (!prod) { alert('Indica al menos el nombre del producto.'); return; }
+      if (!selectedUrgencia) { alert('Indica la urgencia (No hay / Queda poco / Aún queda).'); return; }
+      const productId = 'o-' + slugify([prod, color].join('-'));
+      try {
+        const { data, error } = await sb.from('inv_requests').insert({
+          catalogo: 'otros', product_id: productId, grupo: null, categoria: cat || null,
+          producto: prod, color: color || null, fabricante: fabricante || null, ref_fabricante: refFabricante || null,
+          urgencia: selectedUrgencia, empleado: employeeName,
+        }).select().single();
+        if (error) throw error;
+        myOtros.push(data);
+        renderOtros();
+        updateSummary();
+        form.reset();
+        selectedUrgencia = null;
+        document.querySelectorAll('#otro-urgencia .urg-btn').forEach((b) => b.classList.remove('active'));
+      } catch (e) {
+        showError('No se pudo agregar. Revisa tu conexión.');
       }
-      state.otros.push({ id: 'o' + Date.now(), cat, prod, color, fabricante, refFabricante });
-      saveState();
-      form.reset();
-      renderOtros();
-      updateSummary();
     });
   }
 
@@ -370,7 +404,6 @@
   function renderCatalogoRowView(row, item) {
     row.innerHTML = '';
     row.classList.remove('is-editing');
-
     const info = document.createElement('div');
     info.className = 'item-info';
     info.innerHTML =
@@ -384,10 +417,10 @@
       `<button type="button" class="btn-icon btn-edit" aria-label="Editar">✎</button>` +
       `<button type="button" class="btn-icon btn-remove" aria-label="Eliminar">✕</button>`;
     actions.querySelector('.btn-edit').addEventListener('click', () => renderCatalogoRowEdit(row, item));
-    actions.querySelector('.btn-remove').addEventListener('click', () => {
+    actions.querySelector('.btn-remove').addEventListener('click', async () => {
       const label = item.color ? `${item.prod} (${item.color})` : item.prod;
       if (!confirm(`¿Eliminar "${label}" del catálogo? Esta acción no se puede deshacer.`)) return;
-      deleteCatalogItem(item);
+      await deleteCatalogItem(item);
     });
 
     row.appendChild(info);
@@ -397,7 +430,6 @@
   function renderCatalogoRowEdit(row, item) {
     row.innerHTML = '';
     row.classList.add('is-editing');
-
     const grupoInput = inputEl(item.grupo, 'Grupo / sección');
     const prodInput = inputEl(item.prod, 'Producto');
     const colorInput = inputEl(item.color, 'Color (opcional)');
@@ -412,17 +444,14 @@
     actions.innerHTML =
       `<button type="button" class="btn-icon btn-save" aria-label="Guardar">✓</button>` +
       `<button type="button" class="btn-icon btn-cancel" aria-label="Cancelar">✕</button>`;
-    actions.querySelector('.btn-save').addEventListener('click', () => {
+    actions.querySelector('.btn-save').addEventListener('click', async () => {
       const grupo = grupoInput.value.trim();
       const prod = prodInput.value.trim();
       const color = colorInput.value.trim();
       const fabricante = fabricanteInput.value.trim();
       const refFabricante = refInput.value.trim();
-      if (!grupo || !prod) {
-        alert('El grupo y el producto son obligatorios.');
-        return;
-      }
-      saveCatalogEdit(item, { grupo, prod, color, fabricante, refFabricante });
+      if (!grupo || !prod) { alert('El grupo y el producto son obligatorios.'); return; }
+      await saveCatalogEdit(item, { grupo, prod, color, fabricante, refFabricante });
     });
     actions.querySelector('.btn-cancel').addEventListener('click', () => renderCatalogoRowView(row, item));
 
@@ -430,29 +459,51 @@
     row.appendChild(actions);
   }
 
-  function saveCatalogEdit(item, patch) {
-    if (item.custom) {
-      const c = catalogEdits.custom.find((x) => x.id === item.id);
-      if (c) Object.assign(c, patch);
-    } else {
-      catalogEdits.edits[item.id] = patch;
+  async function saveCatalogEdit(item, patch) {
+    try {
+      if (item.custom) {
+        const { error } = await sb.from('inv_catalog_custom').update({
+          grupo: patch.grupo, producto: patch.prod, color: patch.color || null,
+          fabricante: patch.fabricante || null, ref_fabricante: patch.refFabricante || null,
+        }).eq('id', item.id);
+        if (error) throw error;
+        const c = catalogEdits.custom.find((x) => x.id === item.id);
+        if (c) Object.assign(c, patch);
+      } else {
+        const catalogo = EFFECTIVE.rieles.some((it) => it.id === item.id) ? 'rieles' : 'barras';
+        const { error } = await sb.from('inv_catalog_edits').upsert({
+          item_id: item.id, catalogo, grupo: patch.grupo, producto: patch.prod, color: patch.color || null,
+          fabricante: patch.fabricante || null, ref_fabricante: patch.refFabricante || null,
+        });
+        if (error) throw error;
+        catalogEdits.edits[item.id] = patch;
+      }
+      rebuildEffectiveCatalog();
+      refreshCatalogUI();
+      showToast('Producto actualizado.');
+    } catch (e) {
+      showError('No se pudo guardar. Revisa tu conexión.');
     }
-    saveCatalogEdits();
-    refreshEverything();
-    showToast('Producto actualizado.');
   }
 
-  function deleteCatalogItem(item) {
-    if (item.custom) {
-      catalogEdits.custom = catalogEdits.custom.filter((x) => x.id !== item.id);
-    } else {
-      catalogEdits.deleted[item.id] = true;
+  async function deleteCatalogItem(item) {
+    try {
+      if (item.custom) {
+        const { error } = await sb.from('inv_catalog_custom').delete().eq('id', item.id);
+        if (error) throw error;
+        catalogEdits.custom = catalogEdits.custom.filter((x) => x.id !== item.id);
+      } else {
+        const catalogo = EFFECTIVE.rieles.some((it) => it.id === item.id) ? 'rieles' : 'barras';
+        const { error } = await sb.from('inv_catalog_deleted').upsert({ item_id: item.id, catalogo });
+        if (error) throw error;
+        catalogEdits.deleted[item.id] = true;
+      }
+      rebuildEffectiveCatalog();
+      refreshCatalogUI();
+      showToast('Producto eliminado del catálogo.');
+    } catch (e) {
+      showError('No se pudo eliminar. Revisa tu conexión.');
     }
-    delete state.checked[item.id];
-    saveState();
-    saveCatalogEdits();
-    refreshEverything();
-    showToast('Producto eliminado del catálogo.');
   }
 
   function populateGruposDatalist() {
@@ -480,14 +531,10 @@
       const header = document.createElement('button');
       header.type = 'button';
       header.className = 'cat-header';
-      header.innerHTML =
-        `<span class="chevron">›</span>` +
-        `<span class="cat-title">${escapeHtml(section.title)}</span>` +
-        `<span class="cat-count">${section.items.length}</span>`;
+      header.innerHTML = `<span class="chevron">›</span><span class="cat-title">${escapeHtml(section.title)}</span><span class="cat-count">${section.items.length}</span>`;
       header.addEventListener('click', () => {
         const nowOpen = wrap.classList.toggle('open');
-        if (nowOpen) openCatalogoSections[catalogoView].add(section.title);
-        else openCatalogoSections[catalogoView].delete(section.title);
+        if (nowOpen) openCatalogoSections[catalogoView].add(section.title); else openCatalogoSections[catalogoView].delete(section.title);
       });
 
       const body = document.createElement('div');
@@ -503,10 +550,7 @@
 
   function initCatalogoTab() {
     document.querySelectorAll('.catalogo-switch-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        catalogoView = btn.dataset.cat;
-        renderCatalogo();
-      });
+      btn.addEventListener('click', () => { catalogoView = btn.dataset.cat; renderCatalogo(); });
     });
 
     const form = document.getElementById('producto-form');
@@ -519,137 +563,75 @@
       addBtn.hidden = true;
       document.getElementById('prod-grupo').focus();
     });
-    cancelBtn.addEventListener('click', () => {
-      form.reset();
-      form.hidden = true;
-      addBtn.hidden = false;
-    });
-    form.addEventListener('submit', (e) => {
+    cancelBtn.addEventListener('click', () => { form.reset(); form.hidden = true; addBtn.hidden = false; });
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const grupo = document.getElementById('prod-grupo').value.trim();
       const prod = document.getElementById('prod-nombre').value.trim();
       const color = document.getElementById('prod-color').value.trim();
       const fabricante = document.getElementById('prod-fabricante').value.trim();
       const refFabricante = document.getElementById('prod-ref').value.trim();
-      if (!grupo || !prod) {
-        alert('Indica al menos el grupo/sección y el producto.');
-        return;
-      }
+      if (!grupo || !prod) { alert('Indica al menos el grupo/sección y el producto.'); return; }
       const list = catalogoView === 'rieles' ? EFFECTIVE.rieles : EFFECTIVE.barras;
       const yaExiste = list.some((it) => norm(it.prod) === norm(prod) && norm(it.color || '') === norm(color));
       if (yaExiste) {
-        const seguir = confirm(
-          `Ya existe "${prod}${color ? ' - ' + color : ''}" en el catálogo. Si querías agregarle fabricante o cambiar algo, cancela y usa el lápiz ✎ para editarlo en vez de crear uno duplicado.\n\n¿Agregarlo de todas formas como un producto nuevo?`
-        );
+        const seguir = confirm(`Ya existe "${prod}${color ? ' - ' + color : ''}" en el catálogo. Si querías agregarle fabricante o cambiar algo, cancela y usa el lápiz ✎ para editarlo en vez de crear uno duplicado.\n\n¿Agregarlo de todas formas como un producto nuevo?`);
         if (!seguir) return;
       }
-      catalogEdits.custom.push({ id: newCustomId(), catalogo: catalogoView, grupo, cat: '-Accesorio', prod, color, fabricante, refFabricante });
-      saveCatalogEdits();
-      openCatalogoSections[catalogoView].add(grupo);
-      refreshEverything();
-      form.reset();
-      form.hidden = true;
-      addBtn.hidden = false;
-      showToast('Producto agregado al catálogo.');
+      const id = newCustomId();
+      try {
+        const { error } = await sb.from('inv_catalog_custom').insert({
+          id, catalogo: catalogoView, grupo, cat: '-Accesorio', producto: prod, color: color || null,
+          fabricante: fabricante || null, ref_fabricante: refFabricante || null,
+        });
+        if (error) throw error;
+        catalogEdits.custom.push({ id, catalogo: catalogoView, grupo, cat: '-Accesorio', prod, color, fabricante, refFabricante });
+        openCatalogoSections[catalogoView].add(grupo);
+        rebuildEffectiveCatalog();
+        refreshCatalogUI();
+        form.reset();
+        form.hidden = true;
+        addBtn.hidden = false;
+        showToast('Producto agregado al catálogo.');
+      } catch (e) {
+        showError('No se pudo agregar. Revisa tu conexión.');
+      }
     });
 
-    document.getElementById('btn-restaurar-catalogo').addEventListener('click', () => {
+    document.getElementById('btn-restaurar-catalogo').addEventListener('click', async () => {
       const total = Object.keys(catalogEdits.edits).length + Object.keys(catalogEdits.deleted).length + catalogEdits.custom.length;
       if (total === 0) return;
-      if (!confirm('¿Restaurar el catálogo a la versión original? Se perderán los productos agregados, editados o eliminados manualmente. No se puede deshacer.')) return;
-      catalogEdits = defaultCatalogEdits();
-      saveCatalogEdits();
-      refreshEverything();
-      showToast('Catálogo restaurado a la versión original.');
-    });
-  }
-
-  // ---------- Exportar / importar catálogo (compartir entre teléfonos) ----------
-  //
-  // Los cambios del catálogo se guardan solo en este dispositivo (localStorage).
-  // Para que se vean en otros teléfonos hay que pasarles un archivo con estos
-  // cambios: no hay servidor compartido, así que la sincronización es manual.
-
-  function initCatalogSync() {
-    document.getElementById('btn-exportar-catalogo').addEventListener('click', () => {
-      const blob = new Blob([JSON.stringify(catalogEdits, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `catalogo-inventario-${todayISO()}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      showToast('Catálogo exportado. Comparte el archivo para importarlo en otros teléfonos.');
-    });
-
-    const fileInput = document.getElementById('input-importar-catalogo');
-    document.getElementById('btn-importar-catalogo').addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', () => {
-      const file = fileInput.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        let parsed;
-        try {
-          parsed = JSON.parse(reader.result);
-          if (!parsed || typeof parsed !== 'object') throw new Error('formato inválido');
-        } catch (e) {
-          alert('Ese archivo no es un catálogo exportado válido.');
-          fileInput.value = '';
-          return;
-        }
-        if (!confirm('¿Reemplazar el catálogo de este teléfono con el del archivo importado? Se perderán los cambios manuales que no estén en ese archivo. No se puede deshacer.')) {
-          fileInput.value = '';
-          return;
-        }
-        catalogEdits = {
-          edits: parsed.edits && typeof parsed.edits === 'object' ? parsed.edits : {},
-          deleted: parsed.deleted && typeof parsed.deleted === 'object' ? parsed.deleted : {},
-          custom: Array.isArray(parsed.custom) ? parsed.custom : [],
-        };
-        saveCatalogEdits();
-        refreshEverything();
-        showToast('Catálogo importado correctamente.');
-        fileInput.value = '';
-      };
-      reader.readAsText(file);
+      if (!confirm('¿Restaurar el catálogo a la versión original para TODOS los teléfonos? Se perderán los productos agregados, editados o eliminados manualmente. No se puede deshacer.')) return;
+      try {
+        await Promise.all([
+          sb.from('inv_catalog_edits').delete().neq('item_id', ''),
+          sb.from('inv_catalog_deleted').delete().neq('item_id', ''),
+          sb.from('inv_catalog_custom').delete().neq('id', ''),
+        ]);
+        catalogEdits = { edits: {}, deleted: {}, custom: [] };
+        rebuildEffectiveCatalog();
+        refreshCatalogUI();
+        showToast('Catálogo restaurado a la versión original.');
+      } catch (e) {
+        showError('No se pudo restaurar. Revisa tu conexión.');
+      }
     });
   }
 
   // ---------- Resumen / filtros ----------
 
-  function countMarked() {
-    let lines = 0;
-    EFFECTIVE.rieles.forEach((it) => { if (state.checked[it.id]) lines++; });
-    EFFECTIVE.barras.forEach((it) => { if (state.checked[it.id]) lines++; });
-    lines += state.otros.length;
-    return { lines };
-  }
-
-  function catalogProgress(tabKey) {
-    const list = tabKey === 'rieles' ? EFFECTIVE.rieles : tabKey === 'barras' ? EFFECTIVE.barras : null;
-    if (!list) return null;
-    const total = list.length;
-    const done = list.filter((it) => state.checked[it.id]).length;
-    return { total, done };
-  }
-
   function updateSummary() {
-    const { lines } = countMarked();
-    document.getElementById('summary-lines').textContent = lines;
-    document.getElementById('badge-otros').textContent = state.otros.length;
-    document.getElementById('badge-otros').style.display = state.otros.length ? 'inline-flex' : 'none';
-    document.getElementById('badge-historial').textContent = history.length;
-    document.getElementById('badge-historial').style.display = history.length ? 'inline-flex' : 'none';
+    document.getElementById('summary-lines').textContent = myRequests.size + myOtros.length;
+    document.getElementById('badge-otros').textContent = myOtros.length;
+    document.getElementById('badge-otros').style.display = myOtros.length ? 'inline-flex' : 'none';
 
     const progress = document.getElementById('tab-progress');
     const fill = document.getElementById('tab-progress-fill');
-    const prog = catalogProgress(activeTab);
-    if (prog) {
+    const list = activeTab === 'rieles' ? EFFECTIVE.rieles : activeTab === 'barras' ? EFFECTIVE.barras : null;
+    if (list) {
+      const done = list.filter((it) => myRequests.has(it.id)).length;
       progress.style.visibility = 'visible';
-      fill.style.width = (prog.total ? (prog.done / prog.total) * 100 : 0) + '%';
+      fill.style.width = (list.length ? (done / list.length) * 100 : 0) + '%';
     } else {
       progress.style.visibility = 'hidden';
     }
@@ -668,7 +650,6 @@
   function applyFilters() {
     const q = norm(document.getElementById('search-input').value);
     const filtering = !!q || onlyMarked;
-
     document.querySelectorAll(`#panel-${activeTab} .cat-section`).forEach((secEl) => {
       let visibleCount = 0;
       secEl.querySelectorAll('.item-row').forEach((row) => {
@@ -694,108 +675,209 @@
         const showToolbar = activeTab === 'rieles' || activeTab === 'barras';
         document.querySelector('.toolbar').style.display = showToolbar ? '' : 'none';
         if (!showToolbar) document.getElementById('tab-progress').style.visibility = 'hidden';
-        if (activeTab === 'catalogo') renderCatalogo();
         applyFilters();
         updateSummary();
       });
     });
   }
 
-  // ---------- Cabecera del pedido ----------
+  // ---------- Vaciar mis marcas ----------
 
-  function initHeaderForm() {
-    const ids = { solicitante: 'f-solicitante', fecha: 'f-fecha', observaciones: 'f-observaciones' };
-    Object.entries(ids).forEach(([key, id]) => {
-      const el = document.getElementById(id);
-      el.value = state.header[key] || (key === 'fecha' ? todayISO() : '');
-      el.addEventListener('input', () => {
-        state.header[key] = el.value;
-        saveState();
-      });
-    });
-
-    const toggle = document.getElementById('order-header-toggle');
-    const panel = document.getElementById('order-header-fields');
-    toggle.addEventListener('click', () => {
-      const open = panel.classList.toggle('open');
-      toggle.classList.toggle('open', open);
-    });
+  async function clearMyRequests() {
+    if (myRequests.size === 0 && myOtros.length === 0) return;
+    if (!confirm('¿Vaciar todo lo que has marcado? No se puede deshacer.')) return;
+    try {
+      const { error } = await sb.from('inv_requests').delete().eq('empleado', employeeName).is('report_id', null);
+      if (error) throw error;
+      myRequests = new Map();
+      myOtros = [];
+      refreshCatalogUI();
+      renderOtros();
+      showToast('Tus marcas se vaciaron.');
+    } catch (e) {
+      showError('No se pudo vaciar. Revisa tu conexión.');
+    }
   }
 
-  function refreshHeaderForm() {
-    document.getElementById('f-fecha').value = state.header.fecha;
-    document.getElementById('f-observaciones').value = state.header.observaciones;
-  }
+  // =========================================================
+  // ADMIN
+  // =========================================================
 
-  // ---------- Construcción de los datos del pedido (agrupado por sección) ----------
-
-  function groupByGrupo(catalog) {
-    const groups = [];
-    const byTitle = new Map();
-    catalog.forEach((it) => {
-      if (!state.checked[it.id]) return;
-      let g = byTitle.get(it.grupo);
-      if (!g) {
-        g = { title: it.grupo, rows: [] };
-        byTitle.set(it.grupo, g);
-        groups.push(g);
+  function initAdmin() {
+    document.getElementById('admin-login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('admin-email').value.trim();
+      const password = document.getElementById('admin-password').value;
+      const errEl = document.getElementById('admin-login-error');
+      errEl.hidden = true;
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) {
+        errEl.textContent = 'No se pudo entrar: revisa el email y la contraseña.';
+        errEl.hidden = false;
+        return;
       }
-      g.rows.push([it.prod, it.color || '', it.fabricante || '', it.refFabricante || '']);
+      await showAdminPanel();
     });
-    return groups;
+
+    document.getElementById('btn-admin-logout').addEventListener('click', async () => {
+      await sb.auth.signOut();
+      document.getElementById('admin-panel').hidden = true;
+      document.getElementById('admin-login-box').hidden = false;
+    });
+
+    document.getElementById('btn-cerrar-semana').addEventListener('click', async () => {
+      if (!confirm('¿Cerrar la semana ahora y archivar todo lo pendiente en un informe nuevo?')) return;
+      const { error } = await sb.rpc('inv_close_weekly_report');
+      if (error) { showError('No se pudo cerrar la semana.'); return; }
+      showToast('Semana cerrada. Informe generado.');
+      await loadAdminReports();
+      await renderAdminReportView();
+    });
+
+    document.getElementById('admin-report-select').addEventListener('change', async (e) => {
+      adminViewingReportId = e.target.value;
+      await renderAdminReportView();
+    });
+
+    document.getElementById('btn-admin-pdf').addEventListener('click', async () => {
+      const { data, meta } = await fetchAdminReportData(adminViewingReportId);
+      if (!hasReportData(data)) { alert('No hay productos en este informe.'); return; }
+      const doc = renderAdminPdfDoc(data, meta);
+      doc.save(`Informe_Inventario_${meta.label.replace(/[^\w]+/g, '_')}.pdf`);
+    });
+    document.getElementById('btn-admin-print').addEventListener('click', async () => {
+      const { data, meta } = await fetchAdminReportData(adminViewingReportId);
+      if (!hasReportData(data)) { alert('No hay productos en este informe.'); return; }
+      document.getElementById('print-area').innerHTML = buildAdminPrintHtml(data, meta);
+      window.print();
+    });
+
+    // Restaura sesión si ya había una activa
+    sb.auth.getSession().then(({ data }) => {
+      if (data.session) showAdminPanel();
+    });
   }
 
-  function buildOrderData() {
-    const rielesGroups = groupByGrupo(EFFECTIVE.rieles);
-    const barrasGroups = groupByGrupo(EFFECTIVE.barras);
-    const otros = state.otros.map((o) => [o.cat || '', o.prod, o.color || '', o.fabricante || '', o.refFabricante || '']);
-    return { rielesGroups, barrasGroups, otros };
+  async function showAdminPanel() {
+    document.getElementById('admin-login-box').hidden = true;
+    document.getElementById('admin-panel').hidden = false;
+    await loadAdminReports();
+    adminViewingReportId = 'current';
+    await renderAdminReportView();
   }
 
-  function hasOrderData(data) {
-    return data.rielesGroups.length > 0 || data.barrasGroups.length > 0 || data.otros.length > 0;
+  async function loadAdminReports() {
+    const { data, error } = await sb.from('inv_weekly_reports').select('*').order('created_at', { ascending: false });
+    adminReports = error ? [] : (data || []);
+    const select = document.getElementById('admin-report-select');
+    select.innerHTML = '<option value="current">Semana en curso</option>' +
+      adminReports.map((r) => `<option value="${r.id}">${escapeHtml(r.label)}</option>`).join('');
   }
 
-  // ---------- Generación de PDF ----------
+  function urgenciaRankOf(v) { return URGENCIA_RANK[v] || 0; }
 
-  function renderPdfDoc(header, data, totals) {
+  async function fetchAdminReportData(reportId) {
+    let query = sb.from('inv_requests').select('*');
+    query = reportId === 'current' ? query.is('report_id', null) : query.eq('report_id', reportId);
+    const { data, error } = await query;
+    if (error) { showError('No se pudo cargar el informe.'); return { data: { rieles: [], barras: [], otros: [] }, meta: { label: '' } }; }
+
+    const groups = { rieles: new Map(), barras: new Map(), otros: new Map() };
+    (data || []).forEach((row) => {
+      const bucket = groups[row.catalogo] || groups.otros;
+      let entry = bucket.get(row.product_id);
+      if (!entry) {
+        entry = { grupo: row.grupo, categoria: row.categoria, producto: row.producto, color: row.color, fabricante: row.fabricante, refFabricante: row.ref_fabricante, urgencia: row.urgencia, empleados: new Set() };
+        bucket.set(row.product_id, entry);
+      }
+      entry.empleados.add(row.empleado);
+      if (urgenciaRankOf(row.urgencia) > urgenciaRankOf(entry.urgencia)) entry.urgencia = row.urgencia;
+    });
+
+    const toGroupsByGrupo = (map) => {
+      const sections = [];
+      const byTitle = new Map();
+      map.forEach((entry) => {
+        const title = entry.grupo || entry.categoria || 'Otros';
+        let sec = byTitle.get(title);
+        if (!sec) { sec = { title, rows: [] }; byTitle.set(title, sec); sections.push(sec); }
+        sec.rows.push(entry);
+      });
+      return sections;
+    };
+
+    const label = reportId === 'current' ? `Semana en curso (${todayISO()})` : (adminReports.find((r) => r.id === reportId)?.label || 'Informe');
+    return {
+      data: { rieles: toGroupsByGrupo(groups.rieles), barras: toGroupsByGrupo(groups.barras), otros: toGroupsByGrupo(groups.otros) },
+      meta: { label },
+    };
+  }
+
+  function hasReportData(data) {
+    return data.rieles.length > 0 || data.barras.length > 0 || data.otros.length > 0;
+  }
+
+  function entryRowHtml(entry) {
+    return `<tr class="urg-row-${entry.urgencia}">` +
+      `<td>${escapeHtml(entry.producto)}</td>` +
+      `<td>${escapeHtml(entry.color || '')}</td>` +
+      `<td>${escapeHtml(URGENCIA_LABEL[entry.urgencia] || '')}</td>` +
+      `<td>${escapeHtml(entry.fabricante || '')}</td>` +
+      `<td>${escapeHtml(entry.refFabricante || '')}</td>` +
+      `<td>${escapeHtml([...entry.empleados].join(', '))}</td>` +
+      `</tr>`;
+  }
+
+  function sectionsToHtml(sections) {
+    if (!sections.length) return '';
+    let rows = '';
+    sections.forEach((sec) => {
+      rows += `<tr class="group-row"><td colspan="6">${escapeHtml(sec.title)}</td></tr>`;
+      sec.rows.forEach((entry) => { rows += entryRowHtml(entry); });
+    });
+    return `<table><thead><tr><th>Producto</th><th>Color</th><th>Urgencia</th><th>Fabricante</th><th>Ref.</th><th>Marcado por</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  async function renderAdminReportView() {
+    const { data, meta } = await fetchAdminReportData(adminViewingReportId);
+    const el = document.getElementById('admin-report-content');
+    if (!hasReportData(data)) {
+      el.innerHTML = '<p class="empty-hint">No hay productos marcados en este informe.</p>';
+      return;
+    }
+    el.innerHTML =
+      (data.rieles.length ? `<h3>Guías y Rieles</h3><div class="history-table-wrap">${sectionsToHtml(data.rieles)}</div>` : '') +
+      (data.barras.length ? `<h3>Barras</h3><div class="history-table-wrap">${sectionsToHtml(data.barras)}</div>` : '') +
+      (data.otros.length ? `<h3>Otros</h3><div class="history-table-wrap">${sectionsToHtml(data.otros)}</div>` : '');
+  }
+
+  function renderAdminPdfDoc(data, meta) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-    const marginX = 40;
+    const marginX = 30;
     let y = 50;
-
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
-    doc.text('PEDIDO DE MATERIAL', marginX, y);
-    y += 26;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text(`Fecha: ${header.fecha || todayISO()}`, marginX, y);
+    doc.text('INFORME DE INVENTARIO', marginX, y);
+    y += 20;
+    doc.setFontSize(11);
+    doc.text(meta.label, marginX, y);
     y += 20;
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.text(`Solicitado por: ${header.solicitante || '-'}`, marginX, y);
-    y += 14;
-    if (header.observaciones) {
-      const wrapped = doc.splitTextToSize(`Observaciones: ${header.observaciones}`, 515);
-      doc.text(wrapped, marginX, y);
-      y += wrapped.length * 12 + 4;
-    }
-    y += 8;
-
-    function groupedBody(groups) {
+    function groupedBody(sections) {
       const rows = [];
-      groups.forEach((g) => {
-        rows.push([{ content: g.title, colSpan: 4, styles: { fontStyle: 'bold', fillColor: [225, 232, 242], textColor: [27, 47, 75] } }]);
-        g.rows.forEach((r) => rows.push(r));
+      sections.forEach((sec) => {
+        rows.push([{ content: sec.title, colSpan: 6, styles: { fontStyle: 'bold', fillColor: [225, 232, 242], textColor: [27, 47, 75] } }]);
+        sec.rows.forEach((entry) => rows.push([
+          entry.producto, entry.color || '', URGENCIA_LABEL[entry.urgencia] || '',
+          entry.fabricante || '', entry.refFabricante || '', [...entry.empleados].join(', '),
+        ]));
       });
       return rows;
     }
 
-    function printSection(title, groups) {
-      if (!groups.length) return;
+    function printSection(title, sections) {
+      if (!sections.length) return;
       if (y > 700) { doc.addPage(); y = 50; }
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
@@ -803,249 +885,47 @@
       doc.autoTable({
         startY: y + 6,
         margin: { left: marginX, right: marginX },
-        head: [['Producto', 'Color', 'Fabricante', 'Ref. fabricante']],
-        body: groupedBody(groups),
+        head: [['Producto', 'Color', 'Urgencia', 'Fabricante', 'Ref.', 'Marcado por']],
+        body: groupedBody(sections),
         theme: 'grid',
-        styles: { fontSize: 9, cellPadding: 4 },
+        styles: { fontSize: 8, cellPadding: 3 },
         headStyles: { fillColor: [37, 61, 90] },
-        columnStyles: { 1: { cellWidth: 90 }, 2: { cellWidth: 90 }, 3: { cellWidth: 90 } },
+        columnStyles: { 1: { cellWidth: 60 }, 2: { cellWidth: 55 }, 3: { cellWidth: 65 }, 4: { cellWidth: 55 }, 5: { cellWidth: 90 } },
       });
-      y = doc.lastAutoTable.finalY + 26;
+      y = doc.lastAutoTable.finalY + 20;
     }
 
-    printSection('Sistemas de Guías y Rieles', data.rielesGroups);
-    printSection('Sistemas de Barras', data.barrasGroups);
-
-    if (data.otros.length) {
-      if (y > 700) { doc.addPage(); y = 50; }
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.text('Productos adicionales', marginX, y);
-      doc.autoTable({
-        startY: y + 6,
-        margin: { left: marginX, right: marginX },
-        head: [['Categoría', 'Producto', 'Color', 'Fabricante', 'Ref. fabricante']],
-        body: data.otros,
-        theme: 'grid',
-        styles: { fontSize: 9, cellPadding: 4 },
-        headStyles: { fillColor: [37, 61, 90] },
-        columnStyles: { 2: { cellWidth: 70 }, 3: { cellWidth: 70 }, 4: { cellWidth: 70 } },
-      });
-      y = doc.lastAutoTable.finalY + 26;
-    }
-
-    if (y > 740) { doc.addPage(); y = 50; }
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.text(`Total de productos marcados: ${totals.lines}`, marginX, y);
+    printSection('Sistemas de Guías y Rieles', data.rieles);
+    printSection('Sistemas de Barras', data.barras);
+    printSection('Otros', data.otros);
 
     return doc;
   }
 
-  function generatePDF() {
-    const data = buildOrderData();
-    if (!hasOrderData(data)) {
-      alert('No hay productos marcados. Marca al menos un producto antes de generar el pedido.');
-      return;
-    }
-    const totals = countMarked();
-    const doc = renderPdfDoc(state.header, data, totals);
-    doc.save(`Pedido_Material_${state.header.fecha || todayISO()}.pdf`);
-    saveToHistory(data, totals);
-    performClear();
-    showToast('Pedido guardado en el historial. Se vaciaron las marcas para el próximo pedido.');
-  }
-
-  // ---------- Vista de impresión ----------
-
-  function groupsToHtml(groups) {
-    if (!groups.length) return '';
-    let rows = '';
-    groups.forEach((g) => {
-      rows += `<tr class="group-row"><td colspan="4">${escapeHtml(g.title)}</td></tr>`;
-      g.rows.forEach((r) => { rows += `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`; });
-    });
-    return `<table><thead><tr><th>Producto</th><th>Color</th><th>Fabricante</th><th>Ref. fabricante</th></tr></thead><tbody>${rows}</tbody></table>`;
-  }
-
-  function buildPrintHtml(header, data, totals) {
-    const otrosTable = () => {
-      if (!data.otros.length) return '';
-      return `<h2>Productos adicionales</h2><table><thead><tr><th>Categoría</th><th>Producto</th><th>Color</th><th>Fabricante</th><th>Ref. fabricante</th></tr></thead>` +
-        `<tbody>${data.otros.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-    };
-    return `<h1>Pedido de Material</h1>` +
-      `<p class="print-fecha"><strong>Fecha:</strong> ${escapeHtml(header.fecha || todayISO())}</p>` +
-      `<p><strong>Solicitado por:</strong> ${escapeHtml(header.solicitante || '-')}</p>` +
-      (header.observaciones ? `<p><strong>Observaciones:</strong> ${escapeHtml(header.observaciones)}</p>` : '') +
-      (data.rielesGroups.length ? `<h2>Sistemas de Guías y Rieles</h2>${groupsToHtml(data.rielesGroups)}` : '') +
-      (data.barrasGroups.length ? `<h2>Sistemas de Barras</h2>${groupsToHtml(data.barrasGroups)}` : '') +
-      otrosTable() +
-      `<p class="print-total">Total de productos marcados: ${totals.lines}</p>`;
-  }
-
-  function printOrder() {
-    const data = buildOrderData();
-    if (!hasOrderData(data)) {
-      alert('No hay productos marcados. Marca al menos un producto antes de imprimir.');
-      return;
-    }
-    const totals = countMarked();
-    document.getElementById('print-area').innerHTML = buildPrintHtml(state.header, data, totals);
-    window.print();
-    saveToHistory(data, totals);
-    performClear();
-    showToast('Pedido guardado en el historial. Se vaciaron las marcas para el próximo pedido.');
-  }
-
-  function printHistoryEntry(entry) {
-    document.getElementById('print-area').innerHTML = buildPrintHtml(entry.header, entry.data, entry.totals);
-    window.print();
-  }
-
-  // ---------- Historial de pedidos ----------
-
-  function saveToHistory(data, totals) {
-    if (totals.lines === 0) return;
-    history.unshift({
-      id: 'h' + Date.now(),
-      createdAt: new Date().toISOString(),
-      header: { ...state.header },
-      data,
-      totals,
-    });
-    saveHistory();
-    renderHistory();
-  }
-
-  function renderHistory() {
-    const container = document.getElementById('historial-list');
-    container.innerHTML = '';
-    if (history.length === 0) {
-      container.innerHTML = '<p class="empty-hint">Todavía no has generado ningún pedido. Al tocar "Generar PDF" o "Imprimir" quedará guardado aquí.</p>';
-      return;
-    }
-    const frag = document.createDocumentFragment();
-    history.forEach((entry, i) => {
-      const wrap = document.createElement('section');
-      wrap.className = 'cat-section history-card';
-      if (openHistory.has(entry.id)) wrap.classList.add('open');
-
-      const header = document.createElement('button');
-      header.type = 'button';
-      header.className = 'cat-header history-header';
-      header.innerHTML =
-        `<span class="chevron">›</span>` +
-        `<span class="history-info">` +
-        `<span class="history-date">${escapeHtml(formatFechaLarga(entry.header.fecha))}</span>` +
-        `<span class="history-meta">${escapeHtml(entry.header.solicitante || 'Sin nombre')} · ${entry.totals.lines} productos</span>` +
-        `</span>`;
-      header.addEventListener('click', () => {
-        const nowOpen = wrap.classList.toggle('open');
-        if (nowOpen) openHistory.add(entry.id); else openHistory.delete(entry.id);
-      });
-
-      const body = document.createElement('div');
-      body.className = 'cat-body history-body';
-
-      const otrosTable = () => {
-        if (!entry.data.otros.length) return '';
-        return `<h3>Otros</h3><div class="history-table-wrap"><table><thead><tr><th>Categoría</th><th>Producto</th><th>Color</th><th>Fabricante</th><th>Ref. fabricante</th></tr></thead>` +
-          `<tbody>${entry.data.otros.map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-      };
-      body.innerHTML =
-        (entry.header.observaciones ? `<p class="history-obs"><strong>Observaciones:</strong> ${escapeHtml(entry.header.observaciones)}</p>` : '') +
-        (entry.data.rielesGroups.length ? `<h3>Guías y Rieles</h3><div class="history-table-wrap">${groupsToHtml(entry.data.rielesGroups)}</div>` : '') +
-        (entry.data.barrasGroups.length ? `<h3>Barras</h3><div class="history-table-wrap">${groupsToHtml(entry.data.barrasGroups)}</div>` : '') +
-        otrosTable();
-
-      const actions = document.createElement('div');
-      actions.className = 'history-actions';
-      actions.innerHTML =
-        `<button type="button" class="btn btn-secondary history-pdf">Descargar PDF</button>` +
-        `<button type="button" class="btn btn-secondary history-print">Imprimir</button>` +
-        `<button type="button" class="btn btn-ghost history-delete">Eliminar</button>`;
-      actions.querySelector('.history-pdf').addEventListener('click', () => {
-        const doc = renderPdfDoc(entry.header, entry.data, entry.totals);
-        doc.save(`Pedido_Material_${entry.header.fecha || i}.pdf`);
-      });
-      actions.querySelector('.history-print').addEventListener('click', () => printHistoryEntry(entry));
-      actions.querySelector('.history-delete').addEventListener('click', () => {
-        if (!confirm('¿Eliminar este pedido del historial? No se puede deshacer.')) return;
-        history = history.filter((h) => h.id !== entry.id);
-        saveHistory();
-        renderHistory();
-        updateSummary();
-      });
-      body.appendChild(actions);
-
-      wrap.appendChild(header);
-      wrap.appendChild(body);
-      frag.appendChild(wrap);
-    });
-    container.appendChild(frag);
-  }
-
-  function initHistoryClear() {
-    document.getElementById('btn-clear-historial').addEventListener('click', () => {
-      if (history.length === 0) return;
-      if (!confirm('¿Vaciar todo el historial de pedidos? No se puede deshacer.')) return;
-      history = [];
-      saveHistory();
-      renderHistory();
-      updateSummary();
-    });
-  }
-
-  // ---------- Vaciar marcas ----------
-
-  function performClear() {
-    state.checked = {};
-    state.otros = [];
-    state.header.observaciones = '';
-    state.header.fecha = todayISO();
-    saveState();
-    openSections.rieles.clear();
-    openSections.barras.clear();
-    renderSections(EFFECTIVE.sectionsRieles, 'panel-rieles-list', 'rieles');
-    renderSections(EFFECTIVE.sectionsBarras, 'panel-barras-list', 'barras');
-    renderOtros();
-    refreshHeaderForm();
-    updateSummary();
-    applyFilters();
-  }
-
-  function clearAll() {
-    if (!confirm('¿Vaciar todo lo marcado y los productos adicionales? Los datos de solicitante se mantienen.')) return;
-    performClear();
+  function buildAdminPrintHtml(data, meta) {
+    return `<h1>Informe de Inventario</h1><p class="print-fecha">${escapeHtml(meta.label)}</p>` +
+      (data.rieles.length ? `<h2>Sistemas de Guías y Rieles</h2>${sectionsToHtml(data.rieles)}` : '') +
+      (data.barras.length ? `<h2>Sistemas de Barras</h2>${sectionsToHtml(data.barras)}` : '') +
+      (data.otros.length ? `<h2>Otros</h2>${sectionsToHtml(data.otros)}` : '');
   }
 
   // ---------- Init ----------
 
-  document.addEventListener('DOMContentLoaded', () => {
-    rebuildEffectiveCatalog();
-
-    initHeaderForm();
+  document.addEventListener('DOMContentLoaded', async () => {
+    initEmployeeName();
     initTabs();
     initOtroForm();
-    initHistoryClear();
     initCatalogoTab();
-    initCatalogSync();
-
-    renderSections(EFFECTIVE.sectionsRieles, 'panel-rieles-list', 'rieles');
-    renderSections(EFFECTIVE.sectionsBarras, 'panel-barras-list', 'barras');
-    renderOtros();
-    renderHistory();
-    updateSummary();
-    applyFilters();
+    initAdmin();
 
     document.getElementById('search-input').addEventListener('input', applyFilters);
-    document.getElementById('only-marked').addEventListener('change', (e) => {
-      onlyMarked = e.target.checked;
-      applyFilters();
-    });
-    document.getElementById('btn-pdf').addEventListener('click', generatePDF);
-    document.getElementById('btn-print').addEventListener('click', printOrder);
-    document.getElementById('btn-clear').addEventListener('click', clearAll);
+    document.getElementById('only-marked').addEventListener('change', (e) => { onlyMarked = e.target.checked; applyFilters(); });
+    document.getElementById('btn-clear').addEventListener('click', clearMyRequests);
+
+    await loadCatalogFromSupabase();
+    if (employeeName) await loadMyRequests();
+    renderOtros();
+    updateSummary();
+    applyFilters();
   });
 })();
