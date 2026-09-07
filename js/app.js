@@ -93,6 +93,57 @@
 
   // ---------- Catálogo compartido (Supabase) ----------
 
+  // Migración única: la app antes guardaba las ediciones del catálogo
+  // (fabricante, ref. fabricante, productos agregados) en este localStorage
+  // de cada teléfono. Al pasar a Supabase esos datos quedaron "huérfanos" en
+  // el teléfono donde se habían escrito. Si siguen ahí, se suben una sola
+  // vez al catálogo compartido para no perderlos.
+  const LEGACY_CATALOG_KEY = 'inventarioCatalogoEditsV1';
+  const LEGACY_MIGRATED_KEY = 'inventarioCatalogoMigradoV1';
+
+  async function migrateLegacyCatalogIfNeeded() {
+    if (localStorage.getItem(LEGACY_MIGRATED_KEY)) return;
+    try {
+      const raw = localStorage.getItem(LEGACY_CATALOG_KEY);
+      if (!raw) { localStorage.setItem(LEGACY_MIGRATED_KEY, '1'); return; }
+      const legacy = JSON.parse(raw);
+      const edits = legacy.edits || {};
+      const deleted = legacy.deleted || {};
+      const custom = Array.isArray(legacy.custom) ? legacy.custom : [];
+
+      const catalogoDe = (itemId) => (CATALOG_RIELES.some((it) => it.id === itemId) ? 'rieles' : 'barras');
+
+      const editRows = Object.entries(edits).map(([itemId, patch]) => ({
+        item_id: itemId, catalogo: catalogoDe(itemId), grupo: patch.grupo, producto: patch.prod,
+        color: patch.color || null, fabricante: patch.fabricante || null, ref_fabricante: patch.refFabricante || null,
+      }));
+      const deletedRows = Object.keys(deleted).map((itemId) => ({ item_id: itemId, catalogo: catalogoDe(itemId) }));
+      const customRows = custom.map((c) => ({
+        id: c.id, catalogo: c.catalogo, grupo: c.grupo, cat: c.cat || '-Accesorio', producto: c.prod,
+        color: c.color || null, fabricante: c.fabricante || null, ref_fabricante: c.refFabricante || null,
+      }));
+
+      if (editRows.length === 0 && deletedRows.length === 0 && customRows.length === 0) {
+        localStorage.setItem(LEGACY_MIGRATED_KEY, '1');
+        return;
+      }
+
+      const tasks = [];
+      if (editRows.length) tasks.push(sb.from('inv_catalog_edits').upsert(editRows));
+      if (deletedRows.length) tasks.push(sb.from('inv_catalog_deleted').upsert(deletedRows));
+      if (customRows.length) tasks.push(sb.from('inv_catalog_custom').upsert(customRows));
+      const results = await Promise.all(tasks);
+      if (results.some((r) => r && r.error)) {
+        showError('No se pudo recuperar tu catálogo anterior (fabricantes/referencias). Se reintentará más tarde.');
+        return; // no marcamos como migrado: se reintenta en la próxima carga
+      }
+      localStorage.setItem(LEGACY_MIGRATED_KEY, '1');
+      showToast('Se recuperaron los fabricantes y productos que tenías guardados antes.');
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   async function loadCatalogFromSupabase() {
     const [editsRes, deletedRes, customRes] = await Promise.all([
       sb.from('inv_catalog_edits').select('*'),
@@ -922,6 +973,7 @@
     document.getElementById('only-marked').addEventListener('change', (e) => { onlyMarked = e.target.checked; applyFilters(); });
     document.getElementById('btn-clear').addEventListener('click', clearMyRequests);
 
+    await migrateLegacyCatalogIfNeeded();
     await loadCatalogFromSupabase();
     if (employeeName) await loadMyRequests();
     renderOtros();
