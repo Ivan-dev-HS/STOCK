@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Inventario de Pedidos</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%231b2f4b'/%3E%3Cpath d='M28 46l14 14 30-30' stroke='%2347d18c' stroke-width='10' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-header-inner">
+    <span class="app-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
+    </span>
+    <div>
+      <h1>Inventario de Pedidos</h1>
+      <p class="app-subtitle">Marca lo que falta con su urgencia. Se guarda en la nube, compartido entre todos los teléfonos.</p>
+    </div>
+  </div>
+  <div class="employee-banner">
+    <span>Marcando como <strong id="employee-name-label">-</strong></span>
+    <button type="button" id="btn-change-employee" class="btn-link-light">Cambiar</button>
+  </div>
+</header>
+
+<div id="employee-modal" class="modal-overlay" hidden>
+  <div class="modal-card">
+    <h2>¿Quién eres?</h2>
+    <p>Escribe tu nombre. Se recordará en este teléfono para que sepamos quién marcó cada producto.</p>
+    <form id="employee-form">
+      <input type="text" id="employee-name-input" placeholder="Tu nombre" required autofocus>
+      <button type="submit" class="btn btn-primary">Continuar</button>
+    </form>
+  </div>
+</div>
+
+<nav class="tab-bar">
+  <button type="button" class="tab-btn active" data-tab="rieles">Guías</button>
+  <button type="button" class="tab-btn" data-tab="barras">Barras</button>
+  <button type="button" class="tab-btn" data-tab="otros">Otros <span id="badge-otros" class="badge">0</span></button>
+  <button type="button" class="tab-btn" data-tab="catalogo">Catálogo</button>
+  <button type="button" class="tab-btn" data-tab="admin">Admin</button>
+</nav>
+
+<div class="toolbar">
+  <div class="search-box">
+    <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    <input type="search" id="search-input" placeholder="Buscar producto, color...">
+  </div>
+  <label class="check-label">
+    <input type="checkbox" id="only-marked">
+    Solo marcados
+  </label>
+</div>
+
+<div id="tab-progress" class="progress-bar"><div id="tab-progress-fill" class="progress-fill"></div></div>
+
+<main>
+  <section id="panel-rieles" class="tab-panel active">
+    <div id="panel-rieles-list" class="section-list"></div>
+  </section>
+
+  <section id="panel-barras" class="tab-panel">
+    <div id="panel-barras-list" class="section-list"></div>
+  </section>
+
+  <section id="panel-otros" class="tab-panel">
+    <form id="otro-form" class="otro-form">
+      <input type="text" id="otro-cat" placeholder="Categoría (opcional)">
+      <input type="text" id="otro-prod" placeholder="Producto *" required>
+      <input type="text" id="otro-color" placeholder="Color (opcional)" class="otro-color-field">
+      <input type="text" id="otro-fabricante" placeholder="Fabricante (opcional)">
+      <input type="text" id="otro-ref" placeholder="Ref. fabricante (opcional)">
+      <div class="urgencia-picker" id="otro-urgencia">
+        <button type="button" class="urg-btn urg-no_hay" data-urg="no_hay">No hay</button>
+        <button type="button" class="urg-btn urg-poco" data-urg="poco">Queda poco</button>
+        <button type="button" class="urg-btn urg-por_si_acaso" data-urg="por_si_acaso">Aún queda</button>
+      </div>
+      <button type="submit">Agregar</button>
+    </form>
+    <div id="otros-list" class="item-list"></div>
+  </section>
+
+  <section id="panel-catalogo" class="tab-panel">
+    <p class="historial-hint">Agrega, edita o elimina productos del catálogo (compartido para todos los teléfonos).</p>
+    <div class="catalogo-toolbar">
+      <div class="catalogo-switch">
+        <button type="button" class="catalogo-switch-btn active" data-cat="rieles">Guías</button>
+        <button type="button" class="catalogo-switch-btn" data-cat="barras">Barras</button>
+      </div>
+      <button type="button" id="btn-restaurar-catalogo" class="btn-link">Restaurar original</button>
+    </div>
+    <button type="button" id="btn-add-producto" class="btn btn-secondary catalogo-add-btn">+ Agregar producto</button>
+    <form id="producto-form" class="catalogo-form" hidden>
+      <input type="text" id="prod-grupo" placeholder="Grupo / sección *" required list="grupos-datalist">
+      <datalist id="grupos-datalist"></datalist>
+      <input type="text" id="prod-nombre" placeholder="Producto *" required>
+      <input type="text" id="prod-color" placeholder="Color (opcional)" class="otro-color-field">
+      <input type="text" id="prod-fabricante" placeholder="Fabricante (opcional)">
+      <input type="text" id="prod-ref" placeholder="Ref. fabricante (opcional)">
+      <div class="catalogo-form-actions">
+        <button type="button" id="btn-cancel-producto" class="btn btn-ghost">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Agregar</button>
+      </div>
+    </form>
+    <div id="catalogo-list" class="section-list"></div>
+  </section>
+
+  <section id="panel-admin" class="tab-panel">
+    <div id="admin-login-box" class="admin-login-box">
+      <h2>Acceso administrador</h2>
+      <p class="historial-hint">Aquí se ve el pedido combinado de todos los empleados, sin duplicados.</p>
+      <form id="admin-login-form">
+        <input type="email" id="admin-email" placeholder="Email" autocomplete="username" required>
+        <input type="password" id="admin-password" placeholder="Contraseña" autocomplete="current-password" required>
+        <button type="submit" class="btn btn-primary">Entrar</button>
+      </form>
+      <p id="admin-login-error" class="admin-error" hidden></p>
+    </div>
+
+    <div id="admin-panel" class="admin-panel" hidden>
+      <div class="admin-topbar">
+        <select id="admin-report-select"></select>
+        <button type="button" id="btn-cerrar-semana" class="btn-link">Cerrar semana ahora</button>
+        <button type="button" id="btn-admin-logout" class="btn-link">Salir</button>
+      </div>
+      <div id="admin-report-content" class="history-body"></div>
+      <div class="history-actions">
+        <button type="button" id="btn-admin-pdf" class="btn btn-secondary">Descargar PDF</button>
+        <button type="button" id="btn-admin-print" class="btn btn-secondary">Imprimir</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="action-bar">
+  <div class="summary">
+    <span><strong id="summary-lines">0</strong> marcados por mí</span>
+  </div>
+  <div class="action-buttons">
+    <button type="button" id="btn-clear" class="btn btn-ghost">Vaciar mis marcas</button>
+  </div>
+</footer>
+
+<div id="print-area" class="print-area"></div>
+
+<script src="js/vendor/jspdf.umd.min.js"></script>
+<script src="js/vendor/jspdf.plugin.autotable.min.js"></script>
+<script src="js/vendor/supabase.umd.js"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/catalog-data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
