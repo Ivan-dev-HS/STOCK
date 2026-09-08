@@ -827,6 +827,15 @@
 
   function urgenciaRankOf(v) { return URGENCIA_RANK[v] || 0; }
 
+  // Busca el item en el catálogo compartido actual (no en lo que se guardó
+  // al momento de marcarlo): así, si el fabricante/ref. se agrega o corrige
+  // después de que alguien marcó el producto, el informe/PDF muestra el
+  // dato al día en vez del que había cuando se guardó la marca.
+  function findLiveCatalogItem(productId, catalogo) {
+    const list = catalogo === 'rieles' ? EFFECTIVE.rieles : catalogo === 'barras' ? EFFECTIVE.barras : null;
+    return list ? list.find((it) => it.id === productId) : null;
+  }
+
   async function fetchAdminReportData(reportId) {
     let query = sb.from('inv_requests').select('*');
     query = reportId === 'current' ? query.is('report_id', null) : query.eq('report_id', reportId);
@@ -838,7 +847,13 @@
       const bucket = groups[row.catalogo] || groups.otros;
       let entry = bucket.get(row.product_id);
       if (!entry) {
-        entry = { grupo: row.grupo, categoria: row.categoria, producto: row.producto, color: row.color, fabricante: row.fabricante, refFabricante: row.ref_fabricante, urgencia: row.urgencia, empleados: new Set() };
+        const liveItem = findLiveCatalogItem(row.product_id, row.catalogo);
+        entry = {
+          grupo: row.grupo, categoria: row.categoria, producto: row.producto, color: row.color,
+          fabricante: (liveItem ? liveItem.fabricante : row.fabricante) || null,
+          refFabricante: (liveItem ? liveItem.refFabricante : row.ref_fabricante) || null,
+          urgencia: row.urgencia, empleados: new Set(),
+        };
         bucket.set(row.product_id, entry);
       }
       entry.empleados.add(row.empleado);
