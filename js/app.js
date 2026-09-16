@@ -754,7 +754,23 @@
   // ADMIN
   // =========================================================
 
+  let adminView = 'dashboard';
+
+  function setAdminView(view) {
+    adminView = view;
+    document.querySelectorAll('.admin-subnav-btn').forEach((b) => b.classList.toggle('active', b.dataset.adminView === view));
+    document.getElementById('admin-view-dashboard').hidden = view !== 'dashboard';
+    document.getElementById('admin-view-detalle').hidden = view !== 'detalle';
+  }
+
   function initAdmin() {
+    document.querySelectorAll('.admin-subnav-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        setAdminView(btn.dataset.adminView);
+        if (adminView === 'dashboard') await renderDashboard();
+      });
+    });
+
     document.getElementById('admin-login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = document.getElementById('admin-email').value.trim();
@@ -783,6 +799,7 @@
       showToast('Semana cerrada. Informe generado.');
       await loadAdminReports();
       await renderAdminReportView();
+      if (adminView === 'dashboard') await renderDashboard();
     });
 
     document.getElementById('admin-report-select').addEventListener('change', async (e) => {
@@ -814,7 +831,95 @@
     document.getElementById('admin-panel').hidden = false;
     await loadAdminReports();
     adminViewingReportId = 'current';
+    setAdminView('dashboard');
+    await renderDashboard();
     await renderAdminReportView();
+  }
+
+  // ---------- Dashboard ----------
+
+  async function loadAllRequestsForDashboard() {
+    const { data, error } = await sb.from('inv_requests').select('*');
+    if (error) { showError('No se pudo cargar el resumen.'); return []; }
+    return data || [];
+  }
+
+  function shortDate(iso) {
+    const d = new Date(iso);
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  async function renderDashboard() {
+    const rows = await loadAllRequestsForDashboard();
+    renderDashKpis(rows);
+    renderDashTrend(rows);
+    renderDashRanking('dash-top-productos', rows, null);
+    renderDashRanking('dash-top-criticos', rows, 'no_hay');
+  }
+
+  function renderDashKpis(rows) {
+    const pendientesIds = new Set(rows.filter((r) => r.report_id == null).map((r) => r.product_id));
+    const kpis = [
+      { label: 'Pendiente ahora', value: pendientesIds.size },
+      { label: 'Semanas archivadas', value: adminReports.length },
+      { label: 'Marcas históricas', value: rows.length },
+    ];
+    document.getElementById('dash-kpis').innerHTML = kpis
+      .map((k) => `<div class="kpi-card"><span class="kpi-value">${k.value}</span><span class="kpi-label">${escapeHtml(k.label)}</span></div>`)
+      .join('');
+  }
+
+  function renderDashTrend(rows) {
+    const byWeek = new Map(); // key: report_id o 'current' -> Set(product_id)
+    rows.forEach((r) => {
+      const key = r.report_id || 'current';
+      if (!byWeek.has(key)) byWeek.set(key, new Set());
+      byWeek.get(key).add(r.product_id);
+    });
+    const archivedSorted = adminReports.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const weeks = archivedSorted.map((r) => ({ key: r.id, label: shortDate(r.created_at) }));
+    weeks.push({ key: 'current', label: 'Actual' });
+    const last = weeks.slice(-8);
+    const counts = last.map((w) => (byWeek.get(w.key) ? byWeek.get(w.key).size : 0));
+    const el = document.getElementById('dash-trend');
+    if (counts.every((c) => c === 0)) {
+      el.innerHTML = '<p class="empty-hint">Todavía no hay datos suficientes.</p>';
+      return;
+    }
+    const max = Math.max(1, ...counts);
+    el.innerHTML = last.map((w, i) => {
+      const h = Math.max(4, Math.round((counts[i] / max) * 100));
+      return `<div class="dash-bar-col"><span class="dash-bar-count">${counts[i]}</span><div class="dash-bar" style="height:${h}%"></div><span class="dash-bar-label">${escapeHtml(w.label)}</span></div>`;
+    }).join('');
+  }
+
+  function renderDashRanking(elId, rows, urgenciaFilter) {
+    const filtered = urgenciaFilter ? rows.filter((r) => r.urgencia === urgenciaFilter) : rows;
+    const byProduct = new Map();
+    filtered.forEach((r) => {
+      let entry = byProduct.get(r.product_id);
+      if (!entry) {
+        entry = { producto: r.producto, color: r.color, fabricante: r.fabricante, count: 0 };
+        byProduct.set(r.product_id, entry);
+      }
+      entry.count += 1;
+    });
+    const ranked = [...byProduct.values()].sort((a, b) => b.count - a.count).slice(0, 8);
+    const el = document.getElementById(elId);
+    if (ranked.length === 0) {
+      el.innerHTML = '<p class="empty-hint">Todavía no hay datos.</p>';
+      return;
+    }
+    const max = ranked[0].count;
+    el.innerHTML = ranked.map((r) => {
+      const w = Math.max(6, Math.round((r.count / max) * 100));
+      const sub = [r.color, r.fabricante].filter(Boolean).join(' · ');
+      return `<div class="dash-rank-row">
+        <div class="dash-rank-info"><span class="dash-rank-name">${escapeHtml(r.producto)}</span>${sub ? `<span class="dash-rank-sub">${escapeHtml(sub)}</span>` : ''}</div>
+        <div class="dash-rank-bar-wrap"><div class="dash-rank-bar" style="width:${w}%"></div></div>
+        <span class="dash-rank-count">${r.count}</span>
+      </div>`;
+    }).join('');
   }
 
   async function loadAdminReports() {

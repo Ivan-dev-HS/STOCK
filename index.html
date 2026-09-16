@@ -122,14 +122,42 @@
 
     <div id="admin-panel" class="admin-panel" hidden>
       <div class="admin-topbar">
-        <select id="admin-report-select"></select>
-        <button type="button" id="btn-cerrar-semana" class="btn-link">Cerrar semana ahora</button>
-        <button type="button" id="btn-admin-logout" class="btn-link">Salir</button>
+        <div class="admin-subnav">
+          <button type="button" class="admin-subnav-btn active" data-admin-view="dashboard">Resumen</button>
+          <button type="button" class="admin-subnav-btn" data-admin-view="detalle">Detalle semanal</button>
+        </div>
+        <div class="admin-topbar-actions">
+          <button type="button" id="btn-cerrar-semana" class="btn-link">Cerrar semana ahora</button>
+          <button type="button" id="btn-admin-logout" class="btn-link">Salir</button>
+        </div>
       </div>
-      <div id="admin-report-content" class="history-body"></div>
-      <div class="history-actions">
-        <button type="button" id="btn-admin-pdf" class="btn btn-secondary">Descargar PDF</button>
-        <button type="button" id="btn-admin-print" class="btn btn-secondary">Imprimir</button>
+
+      <div id="admin-view-dashboard" class="admin-view">
+        <div id="dash-kpis" class="dash-kpis"></div>
+        <section class="dash-block">
+          <h3>Tendencia semanal</h3>
+          <p class="dash-hint">Cuántos productos distintos se marcaron como faltantes cada semana.</p>
+          <div id="dash-trend" class="dash-trend"></div>
+        </section>
+        <section class="dash-block">
+          <h3>Top productos más pedidos</h3>
+          <p class="dash-hint">Lo que más se repite en todo el historial, sumando todas las semanas.</p>
+          <div id="dash-top-productos" class="dash-rank"></div>
+        </section>
+        <section class="dash-block">
+          <h3>Top "No hay" crítico</h3>
+          <p class="dash-hint">Igual, pero contando solo las veces marcadas como "No hay" (sin stock).</p>
+          <div id="dash-top-criticos" class="dash-rank"></div>
+        </section>
+      </div>
+
+      <div id="admin-view-detalle" class="admin-view" hidden>
+        <select id="admin-report-select"></select>
+        <div id="admin-report-content" class="history-body"></div>
+        <div class="history-actions">
+          <button type="button" id="btn-admin-pdf" class="btn btn-secondary">Descargar PDF</button>
+          <button type="button" id="btn-admin-print" class="btn btn-secondary">Imprimir</button>
+        </div>
       </div>
     </div>
   </section>

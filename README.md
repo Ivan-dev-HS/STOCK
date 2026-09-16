@@ -31,20 +31,24 @@ coordinarse ni preocuparse por pisar el trabajo de otro.
 
 ## Uso (administrador)
 
-En la pestaña **Admin**, con el email y contraseña de administrador, se ve
-el pedido de **todos los empleados combinado**: si dos personas marcan el
-mismo producto, aparece una sola vez, con la urgencia más alta de las dos y
-los nombres de quienes lo marcaron.
+En la pestaña **Admin**, con el email y contraseña de administrador, hay dos
+vistas:
 
-- **Semana en curso**: lo que está pendiente ahora mismo.
-- Cada **viernes a las 17:00 UTC**, un proceso automático archiva todo lo
-  pendiente en un informe de esa semana y empieza una semana nueva. También
-  se puede tocar **"Cerrar semana ahora"** para hacerlo manualmente en
-  cualquier momento.
-- El desplegable de arriba deja ver cualquier semana anterior.
-- **Descargar PDF** / **Imprimir** generan el informe (agrupado por familia
-  de producto, con urgencia, fabricante, referencia y quién lo marcó) de la
-  semana que se esté viendo.
+- **Resumen** (pantalla principal al entrar): un dashboard con tarjetas de
+  pendiente ahora / semanas archivadas / marcas históricas, un gráfico de
+  **tendencia semanal** (cuántos productos distintos se marcaron cada
+  semana), y dos rankings con todo el historial: **top productos más
+  pedidos** y **top "No hay" crítico** (solo sin stock).
+- **Detalle semanal**: el pedido de **todos los empleados combinado** de una
+  semana concreta — si dos personas marcan el mismo producto, aparece una
+  sola vez, con la urgencia más alta de las dos y los nombres de quienes lo
+  marcaron. El desplegable deja elegir la semana en curso o cualquier semana
+  archivada, y **Descargar PDF** / **Imprimir** generan ese informe.
+
+Cada **viernes a las 17:00 UTC**, un proceso automático archiva todo lo
+pendiente en un informe de esa semana y empieza una semana nueva. También se
+puede tocar **"Cerrar semana ahora"** para hacerlo manualmente en cualquier
+momento.
 
 ## Arquitectura
 
