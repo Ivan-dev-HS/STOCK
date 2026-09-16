@@ -849,22 +849,80 @@
 
   async function renderDashboard() {
     const rows = await loadAllRequestsForDashboard();
-    renderDashKpis(rows);
+    const incidencias = buildIncidenciasAbiertas(rows);
+    renderDashKpis(rows, incidencias);
+    renderDashIncidencias(incidencias);
     renderDashTrend(rows);
     renderDashRanking('dash-top-productos', rows, null);
     renderDashRanking('dash-top-criticos', rows, 'no_hay');
   }
 
-  function renderDashKpis(rows) {
+  function renderDashKpis(rows, incidencias) {
     const pendientesIds = new Set(rows.filter((r) => r.report_id == null).map((r) => r.product_id));
     const kpis = [
       { label: 'Pendiente ahora', value: pendientesIds.size },
+      { label: 'Incidencias abiertas', value: incidencias.length, cls: incidencias.length ? ' kpi-card-alert' : '' },
       { label: 'Semanas archivadas', value: adminReports.length },
       { label: 'Marcas históricas', value: rows.length },
     ];
     document.getElementById('dash-kpis').innerHTML = kpis
-      .map((k) => `<div class="kpi-card"><span class="kpi-value">${k.value}</span><span class="kpi-label">${escapeHtml(k.label)}</span></div>`)
+      .map((k) => `<div class="kpi-card${k.cls || ''}"><span class="kpi-value">${k.value}</span><span class="kpi-label">${escapeHtml(k.label)}</span></div>`)
       .join('');
+  }
+
+  // Agrupa las marcas con estado "incidencia" por producto+semana (la misma
+  // unidad que se ve en Detalle semanal), para poder resolverlas desde el
+  // Resumen sin tener que ir semana por semana a buscarlas.
+  function buildIncidenciasAbiertas(rows) {
+    const byKey = new Map();
+    rows.forEach((r) => {
+      if (r.estado !== 'incidencia') return;
+      const weekKey = r.report_id || 'current';
+      const key = weekKey + '::' + r.product_id;
+      let entry = byKey.get(key);
+      if (!entry) {
+        entry = { ids: [], producto: r.producto, color: r.color, weekKey, nota: r.nota_incidencia || '', empleados: new Set() };
+        byKey.set(key, entry);
+      }
+      entry.ids.push(r.id);
+      entry.empleados.add(r.empleado);
+      if (r.nota_incidencia) entry.nota = r.nota_incidencia;
+    });
+    return [...byKey.values()];
+  }
+
+  function weekLabelFor(weekKey) {
+    if (weekKey === 'current') return 'Semana en curso';
+    const r = adminReports.find((rep) => rep.id === weekKey);
+    return r ? r.label : 'Semana archivada';
+  }
+
+  function renderDashIncidencias(incidencias) {
+    const el = document.getElementById('dash-incidencias');
+    if (incidencias.length === 0) {
+      el.innerHTML = '<p class="empty-hint">No hay incidencias abiertas.</p>';
+      return;
+    }
+    el.innerHTML = incidencias.map((inc, i) => {
+      const sub = [inc.color, weekLabelFor(inc.weekKey), [...inc.empleados].join(', ')].filter(Boolean).join(' · ');
+      return `<div class="dash-incidencia-row">
+        <div class="dash-incidencia-info">
+          <span class="dash-incidencia-name">${escapeHtml(inc.producto)}</span>
+          <span class="dash-incidencia-sub">${escapeHtml(sub)}</span>
+          ${inc.nota ? `<span class="estado-nota">${escapeHtml(inc.nota)}</span>` : ''}
+        </div>
+        <button type="button" class="btn-link dash-incidencia-resolve" data-idx="${i}">Marcar recibido</button>
+      </div>`;
+    }).join('');
+    el.querySelectorAll('.dash-incidencia-resolve').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const inc = incidencias[Number(btn.dataset.idx)];
+        const ok = await setEntryEstado(inc.ids, 'recibido', null);
+        if (!ok) return;
+        showToast('Marcado como recibido.');
+        await renderDashboard();
+      });
+    });
   }
 
   function renderDashTrend(rows) {
@@ -927,6 +985,20 @@
 
   function urgenciaRankOf(v) { return URGENCIA_RANK[v] || 0; }
 
+  const ESTADO_RANK = { pendiente: 0, recibido: 1, incidencia: 2 };
+  function estadoRankOf(v) { return ESTADO_RANK[v] || 0; }
+
+  async function setEntryEstado(ids, nuevoEstado, nota) {
+    try {
+      const { error } = await sb.from('inv_requests').update({ estado: nuevoEstado, nota_incidencia: nota || null }).in('id', ids);
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      showError('No se pudo actualizar el estado. Revisa tu conexión.');
+      return false;
+    }
+  }
+
   // Busca el item en el catálogo compartido actual (no en lo que se guardó
   // al momento de marcarlo): así, si el fabricante/ref. se agrega o corrige
   // después de que alguien marcó el producto, el informe/PDF muestra el
@@ -952,12 +1024,14 @@
           grupo: row.grupo, categoria: row.categoria, producto: row.producto, color: row.color,
           fabricante: (liveItem ? liveItem.fabricante : row.fabricante) || null,
           refFabricante: (liveItem ? liveItem.refFabricante : row.ref_fabricante) || null,
-          urgencia: row.urgencia, empleados: new Set(),
+          urgencia: row.urgencia, empleados: new Set(), ids: [], estado: 'pendiente', notaIncidencia: null,
         };
         bucket.set(row.product_id, entry);
       }
       entry.empleados.add(row.empleado);
+      entry.ids.push(row.id);
       if (urgenciaRankOf(row.urgencia) > urgenciaRankOf(entry.urgencia)) entry.urgencia = row.urgencia;
+      if (estadoRankOf(row.estado) > estadoRankOf(entry.estado)) { entry.estado = row.estado; entry.notaIncidencia = row.nota_incidencia; }
     });
 
     const toGroupsByGrupo = (map) => {
@@ -1004,6 +1078,64 @@
     return `<table><thead><tr><th>Producto</th><th>Color</th><th>Urgencia</th><th>Fabricante</th><th>Ref.</th><th>Marcado por</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
+  // Variante interactiva de entryRowHtml/sectionsToHtml, solo para la vista
+  // en vivo del admin (#admin-report-content): añade botones para marcar
+  // "Recibido" o "Incidencia" por producto. El PDF/impresión (pensados para
+  // enviar el pedido al proveedor) siguen usando las versiones no
+  // interactivas de arriba, sin esta columna.
+  function adminEntryRowHtml(entry) {
+    const idsAttr = entry.ids.join(',');
+    const isRecibido = entry.estado === 'recibido';
+    const isIncidencia = entry.estado === 'incidencia';
+    return `<tr class="urg-row-${entry.urgencia} estado-row-${entry.estado}">` +
+      `<td>${escapeHtml(entry.producto)}</td>` +
+      `<td>${escapeHtml(URGENCIA_LABEL[entry.urgencia] || '')}</td>` +
+      `<td class="estado-cell">` +
+      `<div class="estado-actions" data-ids="${idsAttr}">` +
+      `<button type="button" class="estado-btn estado-btn-recibido${isRecibido ? ' active' : ''}" data-estado="recibido">✓ Recibido</button>` +
+      `<button type="button" class="estado-btn estado-btn-incidencia${isIncidencia ? ' active' : ''}" data-estado="incidencia">⚠ Incidencia</button>` +
+      `</div>` +
+      (isIncidencia && entry.notaIncidencia ? `<p class="estado-nota">${escapeHtml(entry.notaIncidencia)}</p>` : '') +
+      `</td>` +
+      `<td>${escapeHtml(entry.color || '')}</td>` +
+      `<td>${escapeHtml(entry.fabricante || '')}</td>` +
+      `<td>${escapeHtml(entry.refFabricante || '')}</td>` +
+      `<td>${escapeHtml([...entry.empleados].join(', '))}</td>` +
+      `</tr>`;
+  }
+
+  function adminSectionsToHtml(sections) {
+    if (!sections.length) return '';
+    let rows = '';
+    sections.forEach((sec) => {
+      rows += `<tr class="group-row"><td colspan="7">${escapeHtml(sec.title)}</td></tr>`;
+      sec.rows.forEach((entry) => { rows += adminEntryRowHtml(entry); });
+    });
+    return `<table><thead><tr><th>Producto</th><th>Urgencia</th><th>Estado</th><th>Color</th><th>Fabricante</th><th>Ref.</th><th>Marcado por</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function wireEstadoButtons(container) {
+    container.querySelectorAll('.estado-actions').forEach((wrap) => {
+      const ids = wrap.dataset.ids.split(',').filter(Boolean);
+      wrap.querySelectorAll('.estado-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const estadoClicked = btn.dataset.estado;
+          const yaActivo = btn.classList.contains('active');
+          let nuevoEstado = 'pendiente';
+          let nota = null;
+          if (!yaActivo) {
+            nuevoEstado = estadoClicked;
+            if (estadoClicked === 'incidencia') nota = prompt('¿Qué pasó? (opcional)', '') || '';
+          }
+          const ok = await setEntryEstado(ids, nuevoEstado, nota);
+          if (!ok) return;
+          showToast(nuevoEstado === 'pendiente' ? 'Marca quitada.' : nuevoEstado === 'recibido' ? 'Marcado como recibido.' : 'Incidencia registrada.');
+          await renderAdminReportView();
+        });
+      });
+    });
+  }
+
   async function renderAdminReportView() {
     const { data, meta } = await fetchAdminReportData(adminViewingReportId);
     const el = document.getElementById('admin-report-content');
@@ -1012,9 +1144,10 @@
       return;
     }
     el.innerHTML =
-      (data.rieles.length ? `<h3>Guías y Rieles</h3><div class="history-table-wrap">${sectionsToHtml(data.rieles)}</div>` : '') +
-      (data.barras.length ? `<h3>Barras</h3><div class="history-table-wrap">${sectionsToHtml(data.barras)}</div>` : '') +
-      (data.otros.length ? `<h3>Otros</h3><div class="history-table-wrap">${sectionsToHtml(data.otros)}</div>` : '');
+      (data.rieles.length ? `<h3>Guías y Rieles</h3><div class="history-table-wrap">${adminSectionsToHtml(data.rieles)}</div>` : '') +
+      (data.barras.length ? `<h3>Barras</h3><div class="history-table-wrap">${adminSectionsToHtml(data.barras)}</div>` : '') +
+      (data.otros.length ? `<h3>Otros</h3><div class="history-table-wrap">${adminSectionsToHtml(data.otros)}</div>` : '');
+    wireEstadoButtons(el);
   }
 
   // ---------- Historial (lista de semanas, con búsqueda) ----------

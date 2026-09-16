@@ -34,21 +34,30 @@ coordinarse ni preocuparse por pisar el trabajo de otro.
 En la pestaña **Admin**, con el email y contraseña de administrador, hay dos
 vistas:
 
-- **Resumen** (pantalla principal al entrar): un dashboard con tarjetas de
-  pendiente ahora / semanas archivadas / marcas históricas, un gráfico de
-  **tendencia semanal** (cuántos productos distintos se marcaron cada
-  semana), y dos rankings con todo el historial: **top productos más
-  pedidos** y **top "No hay" crítico** (solo sin stock).
+- **Resumen** (pantalla principal al entrar): tarjetas de pendiente ahora /
+  incidencias abiertas / semanas archivadas / marcas históricas; un bloque
+  de **incidencias abiertas** (ver más abajo) con acceso directo para
+  resolverlas; un gráfico de **tendencia semanal** (cuántos productos
+  distintos se marcaron cada semana); y dos rankings con todo el historial:
+  **top productos más pedidos** y **top "No hay" crítico** (solo sin
+  stock).
 - **Detalle semanal**: arriba, el pedido de la semana que se esté viendo
   (la semana en curso por defecto) con **todos los empleados combinado** —
   si dos personas marcan el mismo producto, aparece una sola vez, con la
   urgencia más alta de las dos y los nombres de quienes lo marcaron —, y
-  **Descargar PDF** / **Imprimir** generan ese informe. Debajo, el
-  **historial de pedidos**: una lista (no un desplegable) con la semana en
-  curso siempre primero y las semanas archivadas después, cada una con su
-  cantidad de productos y de "sin stock"; toca una para verla arriba. Un
-  buscador filtra esa lista por texto de la semana o por cualquier producto
-  que se haya pedido en ella.
+  **Descargar PDF** / **Imprimir** generan ese informe (para enviar el
+  pedido al proveedor, sin esta parte de seguimiento de recepción). Cada
+  producto tiene botones **✓ Recibido** / **⚠ Incidencia** para marcar si
+  ya llegó o si hubo algún problema (al tocar "Incidencia" se puede
+  escribir una nota, por ejemplo "llegó incompleto" o "llegó dañado");
+  vuelve a tocar el mismo botón para quitar la marca. Esto funciona en
+  cualquier semana, no solo la actual, porque la mercancía puede llegar
+  después de que la semana ya se haya archivado. Debajo, el **historial de
+  pedidos**: una lista (no un desplegable) con la semana en curso siempre
+  primero y las semanas archivadas después, cada una con su cantidad de
+  productos y de "sin stock"; toca una para verla arriba. Un buscador
+  filtra esa lista por texto de la semana o por cualquier producto que se
+  haya pedido en ella.
 
 Cada **viernes a las 17:00 UTC**, un proceso automático archiva todo lo
 pendiente en un informe de esa semana y empieza una semana nueva. También se
@@ -63,12 +72,15 @@ Esta app dejó de ser "todo en el teléfono": ahora es un cliente estático
 - Proyecto: `inventario-pedidos-stock` (org `Ivan-dev-HS's Org`, región
   `eu-west-1`).
 - Tablas: `inv_requests` (una fila = un empleado marcó un producto con una
-  urgencia), `inv_weekly_reports` (informes semanales archivados),
-  `inv_catalog_edits` / `inv_catalog_deleted` / `inv_catalog_custom`
-  (catálogo compartido: ediciones, bajas y productos nuevos).
+  urgencia; también guarda `estado` — pendiente/recibido/incidencia — y
+  `nota_incidencia`, que gestiona el admin), `inv_weekly_reports` (informes
+  semanales archivados), `inv_catalog_edits` / `inv_catalog_deleted` /
+  `inv_catalog_custom` (catálogo compartido: ediciones, bajas y productos
+  nuevos).
 - Seguridad (RLS): cualquiera puede marcar/editar su semana en curso y el
   catálogo; **solo el admin autenticado** puede leer semanas ya archivadas
-  y los informes semanales.
+  y los informes semanales, y es el único que puede cambiar el `estado` de
+  una marca (incluidas las de semanas ya archivadas).
 - El cierre semanal corre con `pg_cron` dentro de la propia base de datos
   (no depende de que la app esté abierta en ningún teléfono).
 
