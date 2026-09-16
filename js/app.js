@@ -768,6 +768,7 @@
       btn.addEventListener('click', async () => {
         setAdminView(btn.dataset.adminView);
         if (adminView === 'dashboard') await renderDashboard();
+        else await renderHistorialView();
       });
     });
 
@@ -798,14 +799,12 @@
       if (error) { showError('No se pudo cerrar la semana.'); return; }
       showToast('Semana cerrada. Informe generado.');
       await loadAdminReports();
-      await renderAdminReportView();
+      adminViewingReportId = 'current';
       if (adminView === 'dashboard') await renderDashboard();
+      else await renderHistorialView();
     });
 
-    document.getElementById('admin-report-select').addEventListener('change', async (e) => {
-      adminViewingReportId = e.target.value;
-      await renderAdminReportView();
-    });
+    document.getElementById('historial-search-input').addEventListener('input', renderHistorialList);
 
     document.getElementById('btn-admin-pdf').addEventListener('click', async () => {
       const { data, meta } = await fetchAdminReportData(adminViewingReportId);
@@ -833,7 +832,6 @@
     adminViewingReportId = 'current';
     setAdminView('dashboard');
     await renderDashboard();
-    await renderAdminReportView();
   }
 
   // ---------- Dashboard ----------
@@ -925,9 +923,6 @@
   async function loadAdminReports() {
     const { data, error } = await sb.from('inv_weekly_reports').select('*').order('created_at', { ascending: false });
     adminReports = error ? [] : (data || []);
-    const select = document.getElementById('admin-report-select');
-    select.innerHTML = '<option value="current">Semana en curso</option>' +
-      adminReports.map((r) => `<option value="${r.id}">${escapeHtml(r.label)}</option>`).join('');
   }
 
   function urgenciaRankOf(v) { return URGENCIA_RANK[v] || 0; }
@@ -1020,6 +1015,76 @@
       (data.rieles.length ? `<h3>Guías y Rieles</h3><div class="history-table-wrap">${sectionsToHtml(data.rieles)}</div>` : '') +
       (data.barras.length ? `<h3>Barras</h3><div class="history-table-wrap">${sectionsToHtml(data.barras)}</div>` : '') +
       (data.otros.length ? `<h3>Otros</h3><div class="history-table-wrap">${sectionsToHtml(data.otros)}</div>` : '');
+  }
+
+  // ---------- Historial (lista de semanas, con búsqueda) ----------
+
+  let historialRows = [];
+  let historialStats = new Map();
+
+  function buildWeekStats(rows) {
+    const byWeek = new Map(); // key: report_id o 'current' -> { products:Set, critical:Set }
+    rows.forEach((r) => {
+      const key = r.report_id || 'current';
+      let s = byWeek.get(key);
+      if (!s) { s = { products: new Set(), critical: new Set() }; byWeek.set(key, s); }
+      s.products.add(r.product_id);
+      if (r.urgencia === 'no_hay') s.critical.add(r.product_id);
+    });
+    return byWeek;
+  }
+
+  async function renderHistorialView() {
+    historialRows = await loadAllRequestsForDashboard();
+    historialStats = buildWeekStats(historialRows);
+    renderHistorialList();
+    await renderAdminReportView();
+  }
+
+  function historialBadgesHtml(key) {
+    const s = historialStats.get(key);
+    const productCount = s ? s.products.size : 0;
+    const criticalCount = s ? s.critical.size : 0;
+    return `<span class="historial-badge">${productCount} producto${productCount === 1 ? '' : 's'}</span>` +
+      (criticalCount ? `<span class="historial-badge historial-badge-critical">${criticalCount} sin stock</span>` : '');
+  }
+
+  function renderHistorialList() {
+    const query = norm(document.getElementById('historial-search-input').value.trim());
+    const archivedSorted = adminReports.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    const matchesQuery = (report) => {
+      if (!query) return true;
+      if (norm(report.label).includes(query)) return true;
+      return historialRows.some((r) => r.report_id === report.id && norm([r.producto, r.color, r.fabricante].join(' ')).includes(query));
+    };
+
+    const currentRowHtml = `<button type="button" class="historial-row${adminViewingReportId === 'current' ? ' active' : ''}" data-report-id="current">
+        <div class="historial-row-info"><span class="historial-row-title">Semana en curso</span></div>
+        <div class="historial-row-badges">${historialBadgesHtml('current')}</div>
+      </button>`;
+
+    const archivedHtml = archivedSorted.filter(matchesQuery).map((r) => `
+      <button type="button" class="historial-row${adminViewingReportId === r.id ? ' active' : ''}" data-report-id="${r.id}">
+        <div class="historial-row-info"><span class="historial-row-title">${escapeHtml(r.label)}</span></div>
+        <div class="historial-row-badges">${historialBadgesHtml(r.id)}</div>
+      </button>`).join('');
+
+    const emptyHtml = query
+      ? '<p class="empty-hint">No hay semanas archivadas que coincidan con la búsqueda.</p>'
+      : '<p class="empty-hint">Todavía no hay semanas archivadas.</p>';
+
+    const container = document.getElementById('historial-list');
+    container.innerHTML = currentRowHtml + (archivedHtml || emptyHtml);
+    container.querySelectorAll('.historial-row').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (btn.dataset.reportId === adminViewingReportId) return;
+        adminViewingReportId = btn.dataset.reportId;
+        container.querySelectorAll('.historial-row').forEach((b) => b.classList.toggle('active', b === btn));
+        await renderAdminReportView();
+        document.getElementById('admin-report-content').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
   }
 
   function renderAdminPdfDoc(data, meta) {

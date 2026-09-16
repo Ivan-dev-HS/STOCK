@@ -39,11 +39,16 @@ vistas:
   **tendencia semanal** (cuántos productos distintos se marcaron cada
   semana), y dos rankings con todo el historial: **top productos más
   pedidos** y **top "No hay" crítico** (solo sin stock).
-- **Detalle semanal**: el pedido de **todos los empleados combinado** de una
-  semana concreta — si dos personas marcan el mismo producto, aparece una
-  sola vez, con la urgencia más alta de las dos y los nombres de quienes lo
-  marcaron. El desplegable deja elegir la semana en curso o cualquier semana
-  archivada, y **Descargar PDF** / **Imprimir** generan ese informe.
+- **Detalle semanal**: arriba, el pedido de la semana que se esté viendo
+  (la semana en curso por defecto) con **todos los empleados combinado** —
+  si dos personas marcan el mismo producto, aparece una sola vez, con la
+  urgencia más alta de las dos y los nombres de quienes lo marcaron —, y
+  **Descargar PDF** / **Imprimir** generan ese informe. Debajo, el
+  **historial de pedidos**: una lista (no un desplegable) con la semana en
+  curso siempre primero y las semanas archivadas después, cada una con su
+  cantidad de productos y de "sin stock"; toca una para verla arriba. Un
+  buscador filtra esa lista por texto de la semana o por cualquier producto
+  que se haya pedido en ella.
 
 Cada **viernes a las 17:00 UTC**, un proceso automático archiva todo lo
 pendiente en un informe de esa semana y empieza una semana nueva. También se

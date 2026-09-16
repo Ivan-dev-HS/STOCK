@@ -152,12 +152,18 @@
       </div>
 
       <div id="admin-view-detalle" class="admin-view" hidden>
-        <select id="admin-report-select"></select>
         <div id="admin-report-content" class="history-body"></div>
         <div class="history-actions">
           <button type="button" id="btn-admin-pdf" class="btn btn-secondary">Descargar PDF</button>
           <button type="button" id="btn-admin-print" class="btn btn-secondary">Imprimir</button>
         </div>
+
+        <h3 class="historial-heading">Historial de pedidos</h3>
+        <div class="search-box historial-search">
+          <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="search" id="historial-search-input" placeholder="Buscar semana o producto...">
+        </div>
+        <div id="historial-list" class="historial-list"></div>
       </div>
     </div>
   </section>
