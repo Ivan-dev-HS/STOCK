@@ -32,35 +32,51 @@ body { padding-bottom: 90px; }
 .app-header {
   background: linear-gradient(135deg, #15263c, #24405f);
   color: #fff;
-  padding: 18px 16px 16px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }
-.app-header-inner { display: flex; gap: 12px; align-items: flex-start; }
+.app-header-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .app-icon {
   flex-shrink: 0;
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   background: rgba(255,255,255,0.14);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #4fd694;
 }
-.app-header h1 { margin: 0; font-size: 1.18rem; letter-spacing: -0.01em; }
-.app-subtitle { margin: 3px 0 0; font-size: 0.8rem; opacity: 0.78; line-height: 1.35; }
+.app-header h1 { margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.employee-banner {
+.employee-chip {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(255,255,255,0.15);
-  font-size: 0.82rem;
-  color: rgba(255,255,255,0.85);
+  gap: 7px;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 999px;
+  padding: 5px 5px 5px 11px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.92);
 }
-.btn-link-light { border: none; background: none; color: #4fd694; font-weight: 700; font-size: 0.8rem; cursor: pointer; padding: 2px; }
+.employee-chip-dot { width: 6px; height: 6px; border-radius: 50%; background: #4fd694; flex-shrink: 0; }
+.employee-chip-edit {
+  border: none;
+  background: rgba(255,255,255,0.16);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
 
 /* ---------- Modal (nombre de empleado) ---------- */
 

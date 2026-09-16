@@ -10,18 +10,16 @@
 <body>
 
 <header class="app-header">
-  <div class="app-header-inner">
+  <div class="app-header-brand">
     <span class="app-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
     </span>
-    <div>
-      <h1>Inventario de Pedidos</h1>
-      <p class="app-subtitle">Marca lo que falta con su urgencia. Se guarda en la nube, compartido entre todos los teléfonos.</p>
-    </div>
+    <h1>Inventario de Pedidos</h1>
   </div>
-  <div class="employee-banner">
-    <span>Marcando como <strong id="employee-name-label">-</strong></span>
-    <button type="button" id="btn-change-employee" class="btn-link-light">Cambiar</button>
+  <div class="employee-chip">
+    <span class="employee-chip-dot" aria-hidden="true"></span>
+    <span id="employee-name-label">-</span>
+    <button type="button" id="btn-change-employee" class="employee-chip-edit">Cambiar</button>
   </div>
 </header>
 
