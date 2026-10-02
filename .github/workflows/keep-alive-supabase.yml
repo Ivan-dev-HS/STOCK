@@ -1,0 +1,32 @@
+name: Mantener activo Supabase
+
+# El plan gratuito de Supabase pausa un proyecto tras ~7 días sin actividad
+# de API. Este workflow hace una petición de lectura real cada pocos días
+# para que el proyecto nunca llegue a ese umbral de inactividad y la app no
+# se quede "bloqueada" esperando a que alguien lo reactive manualmente.
+on:
+  schedule:
+    - cron: '0 6 */3 * *' # cada 3 días a las 06:00 UTC
+  workflow_dispatch: {} # permite lanzarlo a mano desde la pestaña Actions
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping a la API de Supabase
+        run: |
+          set -e
+          HTTP_CODE=$(curl -s -o /tmp/respuesta.json -w "%{http_code}" \
+            "https://dgwroemrzptptoyuazzc.supabase.co/rest/v1/inv_weekly_reports?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          echo "HTTP $HTTP_CODE"
+          cat /tmp/respuesta.json
+          if [ "$HTTP_CODE" -ge 400 ]; then
+            echo "La API respondió con error $HTTP_CODE"
+            exit 1
+          fi
+        env:
+          # Misma "anon key" pública que ya usa la app (js/supabase-config.js).
+          # No es secreta: el acceso real lo controlan las políticas RLS.
+          SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnd3JvZW1yenB0cHRveXVhenpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3OTczNzQsImV4cCI6MjEwNDM3MzM3NH0.UE4lrLiJ48-C2HcTJdIiGbOSxrIAEjmOhOWlmqi-haE
