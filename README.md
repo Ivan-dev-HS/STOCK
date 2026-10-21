@@ -101,6 +101,37 @@ gratuito), así que para crear este proyecto se **pausó** (no se borró) el
 proyecto `lizadex-tiendas`, que no estaba en uso. Se puede reactivar en
 cualquier momento desde el dashboard de Supabase si hace falta.
 
+### Evitar que Supabase se pause
+
+El plan gratuito de Supabase pausa un proyecto cuando lleva tiempo sin
+actividad — en la práctica el proyecto se ha pausado varias veces, incluso
+con pings periódicos de por medio, así que no hay forma 100% segura de
+*evitarlo* sin pasar al plan de pago. Lo que sí hay es un workflow
+(`.github/workflows/keep-alive-supabase.yml`) que corre cada 6 horas,
+comprueba si el proyecto responde y, si no, pide reactivarlo automáticamente
+por la API de administración de Supabase — así, en el peor caso, queda
+inaccesible unas horas en vez de días hasta que alguien lo note a mano.
+
+Para que la parte de reactivación automática funcione hace falta un
+**Personal Access Token** de Supabase guardado como secret del repositorio
+(una sola vez):
+
+1. En supabase.com, entra a **Account → Access Tokens** y genera uno nuevo
+   (por ejemplo, con el nombre "github-keepalive"). Cópialo — solo se
+   muestra una vez.
+2. En este repositorio de GitHub: **Settings → Secrets and variables →
+   Actions → New repository secret**.
+3. Nombre: `SUPABASE_ACCESS_TOKEN`. Valor: el token que copiaste. Guardar.
+
+Sin ese secret, el workflow sigue detectando cuándo el proyecto está caído
+(se ve en la pestaña Actions), pero no puede reactivarlo solo — en ese caso
+hay que entrar al dashboard de Supabase y tocar "Restore" a mano, como
+hasta ahora.
+
+Si en algún momento se prefiere una solución sin depender de nada de esto,
+la única garantía real es pasar el proyecto al plan **Pro** (~25 USD/mes),
+que no pausa proyectos por inactividad.
+
 ## Estructura del proyecto
 
 - `index.html` — estructura de la página (pestañas Guías, Barras, Otros,
